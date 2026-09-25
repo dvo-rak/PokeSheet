@@ -238,9 +238,13 @@ function addCardFromSidebar(data) {
   sheet.getRange(newRow, 4).setValue(qty);
   sheet.getRange(newRow, 5).setValue(card.name || data.name || '');
   sheet.getRange(newRow, 6).setValue(card.rarity || data.rarity || '');
+  sheet.getRange(newRow, 11).setValue('AUTO');
 
   const variantValidation = sheet.getRange(2, 3).getDataValidation();
   if (variantValidation) sheet.getRange(newRow, 3).setDataValidation(variantValidation);
+
+  const watchValidation = sheet.getRange(2, 11).getDataValidation();
+  if (watchValidation) sheet.getRange(newRow, 11).setDataValidation(watchValidation);
 
   let productId = customProductId;
   if (!customPrinting) {
