@@ -37,11 +37,10 @@ PriceCharting data is parsed from product-page HTML, so markup changes may requi
 | I | PSA10 Sales |
 | J | PSA10/Raw |
 | K | PSA Watch |
-| L | PSA Updated |
-| M | Grade Candidates |
-| N | Updated |
-| O | TCGplayer ID |
-| P | PriceCharting |
+| L | Grade Candidates |
+| M | Updated |
+| N | TCGplayer ID |
+| O | PriceCharting |
 
 The sheet name must be `Collection`.
 
@@ -69,7 +68,7 @@ PokeSheet extracts the TCGplayer comparison price into `Raw $`, the PSA 10 price
 
 New cards attempt PriceCharting matching immediately after the TCGplayer Product ID is known. Existing verified links are cached. **Update PriceCharting links** can backfill missing links.
 
-Price updates are capped at 40 PriceCharting product-page fetches per run.
+Price updates respect PSA Watch caching: HIGH = 3 days, LOW = 90 days, and AUTO = 90/30/14/7/3 days based on PSA 10 value (<$25 / $25–49 / $50–99 / $100–249 / $250+). OFF skips automatic refreshes. A card without an Updated timestamp is refreshed on its first run. Raw and PSA data are refreshed together from one page fetch.\n\nPrice updates are capped at 40 PriceCharting product-page fetches per run.
 
 ## Custom / unlisted printings
 
@@ -79,7 +78,7 @@ This allows standard and special printings with the same collector number to use
 
 ## Version
 
-Current source version: **0.2.0**
+Current source version: **0.2.1**
 
 See `CHANGELOG.md` for release notes and `CLAUDE.md` for architecture and maintenance context.
 
