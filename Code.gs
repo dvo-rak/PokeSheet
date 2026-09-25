@@ -1,16 +1,19 @@
 const CONFIG = {
   SHEET: 'Collection',
   TCGDEX_BASE: 'https://api.tcgdex.net/v2/en',
-  VERSION: '0.1.1',
+  VERSION: '0.1.2',
   PSA_REFRESH: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
 };
 
 function onOpen() {
+  ensurePriceChartingColumn_();
+
   SpreadsheetApp.getUi().createMenu('⚡ Pokémon')
     .addItem('➕ Add cards', 'showCardSidebar')
     .addSeparator()
     .addItem('Update raw prices', 'updateRawPrices')
     .addItem('Update PSA prices', 'updatePSAPrices')
+    .addItem('Update PriceCharting links', 'updatePriceChartingLinks')
     .addSeparator()
     .addItem('Update everything', 'updateEverything')
     .addSeparator()
@@ -21,6 +24,7 @@ function onOpen() {
 function updateEverything() {
   updateRawPrices();
   updatePSAPrices();
+  updatePriceChartingLinks();
 }
 
 function setupApiKey() {
@@ -272,6 +276,13 @@ function addCardFromSidebar(data) {
     updateRawPriceForRow_(newRow, { preserveProductId: true, card: tcgdexCard });
   } else {
     updateRawPriceForRow_(newRow, { card: tcgdexCard });
+  }
+
+  // PriceCharting is best-effort. A failed lookup must never block adding a card.
+  try {
+    updatePriceChartingLinkForRow_(newRow);
+  } catch (error) {
+    console.log('Row ' + newRow + ': PriceCharting lookup failed: ' + error.message);
   }
 
   return {
@@ -592,3 +603,218 @@ function updatePSAPrices() {
   console.log('PSA update finished. Lookups used: ' + lookupsUsed + '/' + MAX_LOOKUPS);
 }
 
+
+// PriceCharting links
+
+function ensurePriceChartingColumn_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+  const headerCell = sheet.getRange(1, 17);
+  if (String(headerCell.getValue() || '').trim() !== 'PriceCharting') headerCell.setValue('PriceCharting');
+}
+
+function updatePriceChartingLinks() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) throw new Error('Collection sheet was not found.');
+  ensurePriceChartingColumn_();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  let matched = 0, skipped = 0, missing = 0, errors = 0;
+
+  for (let row = 2; row <= lastRow; row++) {
+    const linkCell = sheet.getRange(row, 17);
+    const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
+
+    if (existingLink) {
+      skipped++;
+      continue;
+    }
+
+    const productId = String(sheet.getRange(row, 16).getValue() || '').trim();
+    const name = String(sheet.getRange(row, 5).getValue() || '').trim();
+    const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
+
+    if (!productId || !name || !cardNumber) {
+      missing++;
+      continue;
+    }
+
+    try {
+      const result = findPriceChartingUrl_({ name, cardNumber, tcgplayerId: productId });
+      if (result) {
+        setPriceChartingLink_(linkCell, result.url);
+        matched++;
+      } else {
+        linkCell.clearContent();
+        missing++;
+      }
+    } catch (error) {
+      errors++;
+      console.log('Row ' + row + ': PriceCharting ERROR: ' + error.message);
+    }
+
+    Utilities.sleep(300);
+  }
+
+  console.log(
+    'PriceCharting update finished. Matched: ' + matched +
+    ', cached: ' + skipped +
+    ', no match/missing data: ' + missing +
+    ', errors: ' + errors
+  );
+}
+
+function updatePriceChartingLinkForRow_(row) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) throw new Error('Collection sheet was not found.');
+  ensurePriceChartingColumn_();
+
+  const linkCell = sheet.getRange(row, 17);
+  const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
+  if (existingLink) return existingLink;
+
+  const productId = String(sheet.getRange(row, 16).getValue() || '').trim();
+  const name = String(sheet.getRange(row, 5).getValue() || '').trim();
+  const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
+  if (!productId || !name || !cardNumber) return null;
+
+  const result = findPriceChartingUrl_({ name, cardNumber, tcgplayerId: productId });
+  if (!result) return null;
+
+  setPriceChartingLink_(linkCell, result.url);
+  return result.url;
+}
+
+function setPriceChartingLink_(cell, url) {
+  const richText = SpreadsheetApp.newRichTextValue()
+    .setText('↗ PriceCharting')
+    .setLinkUrl(url)
+    .build();
+  cell.setRichTextValue(richText);
+  cell.setNote('Verified against TCGplayer Product ID before linking.');
+}
+
+function findPriceChartingUrl_(card) {
+  const cleanName = String(card.name || '')
+    .replace(/[’']/g, '')
+    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cleanNumber = comparableCollectorNumber_(card.cardNumber);
+  const query = cleanName + ' ' + cleanNumber;
+  const searchUrl = 'https://www.pricecharting.com/search-products?type=prices&q=' + encodeURIComponent(query);
+
+  const searchResponse = fetchPriceChartingPage_(searchUrl);
+  const status = searchResponse.getResponseCode();
+  if (status !== 200) throw new Error('PriceCharting search returned HTTP ' + status);
+
+  const html = searchResponse.getContentText();
+  const canonicalUrl = extractPriceChartingCanonical_(html);
+
+  if (canonicalUrl) {
+    const tcgplayerId = extractPriceChartingTcgplayerId_(html);
+    if (tcgplayerId && String(tcgplayerId) === String(card.tcgplayerId)) {
+      return { url: canonicalUrl, tcgplayerId };
+    }
+  }
+
+  const candidates = extractPriceChartingCandidateUrls_(html);
+  const maxCandidates = 20;
+
+  for (let i = 0; i < Math.min(candidates.length, maxCandidates); i++) {
+    const url = candidates[i];
+    if (canonicalUrl && normalizePriceChartingUrl_(url) === normalizePriceChartingUrl_(canonicalUrl)) continue;
+
+    Utilities.sleep(300);
+    const response = fetchPriceChartingPage_(url);
+    if (response.getResponseCode() !== 200) continue;
+
+    const productHtml = response.getContentText();
+    const tcgplayerId = extractPriceChartingTcgplayerId_(productHtml);
+
+    if (tcgplayerId && String(tcgplayerId) === String(card.tcgplayerId)) {
+      return { url: extractPriceChartingCanonical_(productHtml) || url, tcgplayerId };
+    }
+  }
+
+  return null;
+}
+
+function fetchPriceChartingPage_(url) {
+  return UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    },
+    followRedirects: true,
+    muteHttpExceptions: true
+  });
+}
+
+function extractPriceChartingCanonical_(html) {
+  if (!html) return null;
+
+  let match = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+  if (!match) match = html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i);
+  if (!match) return null;
+
+  const url = decodeHtmlEntities_(match[1]);
+  if (!/^https:\/\/www\.pricecharting\.com\/game\//i.test(url)) return null;
+  return normalizePriceChartingUrl_(url);
+}
+
+function extractPriceChartingCandidateUrls_(html) {
+  if (!html) return [];
+
+  const urls = [];
+  const regex = /href=["']((?:https:\/\/www\.pricecharting\.com)?\/game\/[^"'?#]+)["']/gi;
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    let url = decodeHtmlEntities_(match[1]);
+    if (url.startsWith('/')) url = 'https://www.pricecharting.com' + url;
+    if (!url.startsWith('https://www.pricecharting.com/game/')) continue;
+
+    url = normalizePriceChartingUrl_(url);
+    if (!urls.includes(url)) urls.push(url);
+  }
+
+  return urls;
+}
+
+function extractPriceChartingTcgplayerId_(html) {
+  if (!html) return null;
+
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ');
+
+  const patterns = [
+    /TCGPlayer\s*ID\s*:?\s*([0-9]{4,})/i,
+    /TCGplayer\s*ID\s*:?\s*([0-9]{4,})/i,
+    /tcg[-_ ]?player[-_ ]?id[^0-9]{0,100}([0-9]{4,})/i
+  ];
+
+  for (let i = 0; i < patterns.length; i++) {
+    const match = text.match(patterns[i]);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function normalizePriceChartingUrl_(url) {
+  return String(url).replace(/&amp;/g, '&').replace(/[?#].*$/, '').replace(/\/$/, '');
+}
+
+function decodeHtmlEntities_(value) {
+  return String(value).replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+}
