@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 - 2026-09-25
+
+### Added
+- PriceCharting links in column Q with exact TCGplayer Product ID verification.
+- Automatic PriceCharting lookup for newly added cards.
+- Menu action to backfill missing PriceCharting links while preserving cached links.
+
 ## [0.1.1] - 2026-09-25
 
 ### Added
