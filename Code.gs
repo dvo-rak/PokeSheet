@@ -489,7 +489,12 @@ function ensureV021Schema_() {
 
   const headers = [
     'Set ID', 'Card #', 'Variant', 'Qty', 'Name', 'Rarity',
-    'Raw 
+    'Raw $', 'PSA 10 $', 'PSA10 Sales', 'PSA10/Raw',
+    'Refresh', 'Grade Candidates', 'Updated',
+    'TCGplayer ID', 'PriceCharting'
+  ];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+}
 
 // Sheet presentation
 
