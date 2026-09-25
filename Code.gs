@@ -1,12 +1,12 @@
 const CONFIG = {
   SHEET: 'Collection',
   TCGDEX_BASE: 'https://api.tcgdex.net/v2/en',
-  VERSION: '0.2.0',
+  VERSION: '0.2.1',
   PSA_REFRESH: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
 };
 
 function onOpen() {
-  ensureV020Schema_();
+  ensureV021Schema_();
   applySheetFormatting_();
   ensureCollectionSummary_();
 
@@ -190,7 +190,7 @@ function findCardInSetForSidebar(setId, collectorNumber) {
 function addCardFromSidebar(data) {
   if (!data) throw new Error('Card data is missing.');
 
-  ensureV020Schema_();
+  ensureV021Schema_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Collection sheet was not found.');
 
@@ -213,7 +213,7 @@ function addCardFromSidebar(data) {
   const lastRow = sheet.getLastRow();
 
   if (lastRow >= 2) {
-    const values = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+    const values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
     for (let index = 0; index < values.length; index++) {
       const row = index + 2;
       const sameCard =
@@ -222,7 +222,7 @@ function addCardFromSidebar(data) {
         String(values[index][2] || '').trim().toLowerCase() === variant.toLowerCase();
 
       if (!sameCard) continue;
-      if (customPrinting && String(values[index][14] || '').trim() !== customProductId) continue;
+      if (customPrinting && String(values[index][13] || '').trim() !== customProductId) continue;
 
       const oldQty = Number(values[index][3]) || 0;
       const newQty = oldQty + qty;
@@ -250,8 +250,7 @@ function addCardFromSidebar(data) {
   if (!customPrinting) {
     productId = getProductIdForVariant_(card, variant);
   }
-  sheet.getRange(newRow, 15).setValue(productId);
-  sheet.getRange(newRow, 14).setValue(new Date());
+  sheet.getRange(newRow, 14).setValue(productId);
 
   SpreadsheetApp.flush();
 
@@ -272,7 +271,7 @@ function addCardFromSidebar(data) {
     qty,
     name: sheet.getRange(newRow, 5).getValue(),
     rawTCG: sheet.getRange(newRow, 7).getValue(),
-    productId: sheet.getRange(newRow, 15).getValue(),
+    productId: sheet.getRange(newRow, 14).getValue(),
     customPrinting
   };
 }
@@ -294,7 +293,7 @@ function getProductIdForVariant_(card, variant) {
 // PriceCharting pricing
 
 function updatePrices() {
-  ensureV020Schema_();
+  ensureV021Schema_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Collection sheet was not found.');
 
@@ -302,13 +301,32 @@ function updatePrices() {
   if (lastRow < 2) return;
 
   const MAX_LOOKUPS = 40;
-  let lookups = 0, updated = 0, missing = 0, errors = 0;
+  let lookups = 0, updated = 0, cached = 0, off = 0, missing = 0, errors = 0;
 
   for (let row = 2; row <= lastRow && lookups < MAX_LOOKUPS; row++) {
     try {
+      const oldPSA10 = Number(sheet.getRange(row, 8).getValue()) || 0;
+      let watchMode = String(sheet.getRange(row, 11).getValue() || '').trim().toUpperCase();
+      const lastUpdated = sheet.getRange(row, 13).getValue();
+
+      if (!watchMode) {
+        watchMode = 'AUTO';
+        sheet.getRange(row, 11).setValue('AUTO');
+      }
+
+      if (watchMode === 'OFF') {
+        off++;
+        continue;
+      }
+
+      if (!shouldRefreshPrice_(oldPSA10, lastUpdated, watchMode)) {
+        cached++;
+        continue;
+      }
+
       refreshCardIdentity_(row);
 
-      let url = sheet.getRange(row, 16).getRichTextValue()?.getLinkUrl() || '';
+      let url = sheet.getRange(row, 15).getRichTextValue()?.getLinkUrl() || '';
       if (!url) url = updatePriceChartingLinkForRow_(row) || '';
       if (!url) {
         missing++;
@@ -325,7 +343,32 @@ function updatePrices() {
     }
   }
 
-  console.log('Price update finished. Updated: ' + updated + ', fetches: ' + lookups + '/' + MAX_LOOKUPS + ', missing: ' + missing + ', errors: ' + errors);
+  console.log(
+    'Price update finished. Updated: ' + updated +
+    ', fetches: ' + lookups + '/' + MAX_LOOKUPS +
+    ', cached: ' + cached +
+    ', OFF: ' + off +
+    ', missing: ' + missing +
+    ', errors: ' + errors
+  );
+}
+
+function shouldRefreshPrice_(price, lastUpdated, watchMode) {
+  if (watchMode === 'OFF') return false;
+  if (!lastUpdated) return true;
+
+  const ageDays = (Date.now() - new Date(lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
+  if (watchMode === 'HIGH') return ageDays >= 3;
+  if (watchMode === 'LOW') return ageDays >= 90;
+
+  let refreshDays;
+  if (!price || price < 25) refreshDays = CONFIG.PSA_REFRESH.CHEAP;
+  else if (price < 50) refreshDays = CONFIG.PSA_REFRESH.LOW;
+  else if (price < 100) refreshDays = CONFIG.PSA_REFRESH.MEDIUM;
+  else if (price < 250) refreshDays = CONFIG.PSA_REFRESH.HIGH;
+  else refreshDays = CONFIG.PSA_REFRESH.VERY_HIGH;
+
+  return ageDays >= refreshDays;
 }
 
 function refreshCardIdentity_(row) {
@@ -335,7 +378,7 @@ function refreshCardIdentity_(row) {
   const variant = String(sheet.getRange(row, 3).getValue() || '').trim();
   if (!setId || !cardNumber) return;
 
-  const existingProductId = String(sheet.getRange(row, 15).getDisplayValue() || '').trim();
+  const existingProductId = String(sheet.getRange(row, 14).getDisplayValue() || '').trim();
   const card = getTcgdexCard_(setId, cardNumber);
   const exactLocalId = String(card.localId || cardNumber);
 
@@ -344,9 +387,9 @@ function refreshCardIdentity_(row) {
   sheet.getRange(row, 6).setValue(card.rarity || '');
 
   if (!isCustomPrinting_(card, existingProductId)) {
-    sheet.getRange(row, 15).setValue(getProductIdForVariant_(card, variant));
+    sheet.getRange(row, 14).setValue(getProductIdForVariant_(card, variant));
   }
-  sheet.getRange(row, 14).setValue(new Date());
+
 }
 
 function updatePriceChartingPricesForRow_(row, url) {
@@ -378,7 +421,7 @@ function updatePriceChartingPricesForRow_(row, url) {
     if (data.raw !== null && data.raw > 0) sheet.getRange(row, 10).setValue(data.psa10 / data.raw);
     else sheet.getRange(row, 10).clearContent();
 
-    sheet.getRange(row, 12).setValue(new Date());
+    sheet.getRange(row, 13).setValue(new Date());
   }
 }
 
@@ -421,21 +464,547 @@ function extractPriceChartingPSA10_(html) {
   };
 }
 
-function ensureV020Schema_() {
+function ensureV021Schema_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
   if (!sheet) return;
 
+  // v0.1.x -> v0.2.x: remove the old Cardmarket EUR column.
   if (String(sheet.getRange(1, 7).getValue() || '').trim() === 'Raw CM €') {
     sheet.deleteColumn(7);
   }
 
+  // v0.2.0 -> v0.2.1: Raw and PSA now refresh together, so one timestamp is enough.
+  if (String(sheet.getRange(1, 12).getValue() || '').trim() === 'PSA Updated') {
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      const psaUpdated = sheet.getRange(2, 12, lastRow - 1, 1).getValues();
+      const updated = sheet.getRange(2, 14, lastRow - 1, 1).getValues();
+      for (let i = 0; i < psaUpdated.length; i++) {
+        if (psaUpdated[i][0]) updated[i][0] = psaUpdated[i][0];
+      }
+      sheet.getRange(2, 14, lastRow - 1, 1).setValues(updated);
+    }
+    sheet.deleteColumn(12);
+  }
+
   const headers = [
     'Set ID', 'Card #', 'Variant', 'Qty', 'Name', 'Rarity',
-    'Raw $', 'PSA 10 $', 'PSA10 Sales', 'PSA10/Raw',
-    'PSA Watch', 'PSA Updated', 'Grade Candidates', 'Updated',
+    'Raw 
+
+// Sheet presentation
+
+function applySheetFormatting_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+
+  // Keep the underlying ratio precise; only round its display.
+  sheet.getRange('J2:J').setNumberFormat('0.00x');
+  sheet.getRange('G2:H').setNumberFormat('$0.00');
+}
+
+function ensureCollectionSummary_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+
+  // Keep the summary outside the application contract (A:O).
+  sheet.getRange('R1').setValue('Collection Summary');
+  sheet.getRange('R2').setValue('Raw Total');
+  sheet.getRange('S2').setFormula('=SUMPRODUCT(D2:D,G2:G)');
+  sheet.getRange('S2').setNumberFormat('$0.00');
+  sheet.getRange('R1:S1').setFontWeight('bold');
+  sheet.getRange('R2').setFontWeight('bold');
+}
+
+// PriceCharting links
+
+function ensurePriceChartingColumn_() {
+  ensureV021Schema_();
+}
+
+function updatePriceChartingLinks() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) throw new Error('Collection sheet was not found.');
+  ensurePriceChartingColumn_();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  let matched = 0, skipped = 0, missing = 0, errors = 0;
+
+  for (let row = 2; row <= lastRow; row++) {
+    const linkCell = sheet.getRange(row, 15);
+    const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
+
+    if (existingLink) {
+      skipped++;
+      continue;
+    }
+
+    const productId = String(sheet.getRange(row, 14).getValue() || '').trim();
+    const name = String(sheet.getRange(row, 5).getValue() || '').trim();
+    const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
+
+    if (!productId || !name || !cardNumber) {
+      missing++;
+      continue;
+    }
+
+    try {
+      const result = findPriceChartingUrl_({ name, cardNumber, tcgplayerId: productId });
+      if (result) {
+        setPriceChartingLink_(linkCell, result.url);
+        matched++;
+      } else {
+        linkCell.clearContent();
+        missing++;
+      }
+    } catch (error) {
+      errors++;
+      console.log('Row ' + row + ': PriceCharting ERROR: ' + error.message);
+    }
+
+    Utilities.sleep(300);
+  }
+
+  console.log(
+    'PriceCharting update finished. Matched: ' + matched +
+    ', cached: ' + skipped +
+    ', no match/missing data: ' + missing +
+    ', errors: ' + errors
+  );
+}
+
+function updatePriceChartingLinkForRow_(row, cardData) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) throw new Error('Collection sheet was not found.');
+  ensurePriceChartingColumn_();
+
+  const linkCell = sheet.getRange(row, 15);
+  const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
+  if (existingLink) return existingLink;
+
+  cardData = cardData || {};
+
+  const productId = String(
+    cardData.productId || sheet.getRange(row, 14).getDisplayValue() || ''
+  ).trim();
+
+  const name = String(
+    cardData.name || sheet.getRange(row, 5).getDisplayValue() || ''
+  ).trim();
+
+  const cardNumber = String(
+    cardData.cardNumber || sheet.getRange(row, 2).getDisplayValue() || ''
+  ).trim();
+
+  if (!productId || !name || !cardNumber) return null;
+
+  const result = findPriceChartingUrl_({
+    name,
+    cardNumber,
+    tcgplayerId: productId
+  });
+
+  if (!result) return null;
+
+  setPriceChartingLink_(linkCell, result.url);
+  return result.url;
+}
+
+function setPriceChartingLink_(cell, url) {
+  const richText = SpreadsheetApp.newRichTextValue()
+    .setText('↗ PriceCharting')
+    .setLinkUrl(url)
+    .build();
+  cell.setRichTextValue(richText);
+  cell.setNote('Verified against TCGplayer Product ID before linking.');
+}
+
+function findPriceChartingUrl_(card) {
+  const cleanName = String(card.name || '')
+    .replace(/[’']/g, '')
+    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cleanNumber = comparableCollectorNumber_(card.cardNumber);
+  const query = cleanName + ' ' + cleanNumber;
+  const searchUrl = 'https://www.pricecharting.com/search-products?type=prices&q=' + encodeURIComponent(query);
+
+  const searchResponse = fetchPriceChartingPage_(searchUrl);
+  const status = searchResponse.getResponseCode();
+  if (status !== 200) throw new Error('PriceCharting search returned HTTP ' + status);
+
+  const html = searchResponse.getContentText();
+  const canonicalUrl = extractPriceChartingCanonical_(html);
+
+  if (canonicalUrl) {
+    const tcgplayerId = extractPriceChartingTcgplayerId_(html);
+    if (tcgplayerId && String(tcgplayerId) === String(card.tcgplayerId)) {
+      return { url: canonicalUrl, tcgplayerId };
+    }
+  }
+
+  const candidates = extractPriceChartingCandidateUrls_(html);
+  const maxCandidates = 20;
+
+  for (let i = 0; i < Math.min(candidates.length, maxCandidates); i++) {
+    const url = candidates[i];
+    if (canonicalUrl && normalizePriceChartingUrl_(url) === normalizePriceChartingUrl_(canonicalUrl)) continue;
+
+    Utilities.sleep(300);
+    const response = fetchPriceChartingPage_(url);
+    if (response.getResponseCode() !== 200) continue;
+
+    const productHtml = response.getContentText();
+    const tcgplayerId = extractPriceChartingTcgplayerId_(productHtml);
+
+    if (tcgplayerId && String(tcgplayerId) === String(card.tcgplayerId)) {
+      return { url: extractPriceChartingCanonical_(productHtml) || url, tcgplayerId };
+    }
+  }
+
+  return null;
+}
+
+function fetchPriceChartingPage_(url) {
+  return UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    },
+    followRedirects: true,
+    muteHttpExceptions: true
+  });
+}
+
+function extractPriceChartingCanonical_(html) {
+  if (!html) return null;
+
+  let match = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+  if (!match) match = html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i);
+  if (!match) return null;
+
+  const url = decodeHtmlEntities_(match[1]);
+  if (!/^https:\/\/www\.pricecharting\.com\/game\//i.test(url)) return null;
+  return normalizePriceChartingUrl_(url);
+}
+
+function extractPriceChartingCandidateUrls_(html) {
+  if (!html) return [];
+
+  const urls = [];
+  const regex = /href=["']((?:https:\/\/www\.pricecharting\.com)?\/game\/[^"'?#]+)["']/gi;
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    let url = decodeHtmlEntities_(match[1]);
+    if (url.startsWith('/')) url = 'https://www.pricecharting.com' + url;
+    if (!url.startsWith('https://www.pricecharting.com/game/')) continue;
+
+    url = normalizePriceChartingUrl_(url);
+    if (!urls.includes(url)) urls.push(url);
+  }
+
+  return urls;
+}
+
+function extractPriceChartingTcgplayerId_(html) {
+  if (!html) return null;
+
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ');
+
+  const patterns = [
+    /TCGPlayer\s*ID\s*:?\s*([0-9]{4,})/i,
+    /TCGplayer\s*ID\s*:?\s*([0-9]{4,})/i,
+    /tcg[-_ ]?player[-_ ]?id[^0-9]{0,100}([0-9]{4,})/i
+  ];
+
+  for (let i = 0; i < patterns.length; i++) {
+    const match = text.match(patterns[i]);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function normalizePriceChartingUrl_(url) {
+  return String(url).replace(/&amp;/g, '&').replace(/[?#].*$/, '').replace(/\/$/, '');
+}
+
+function decodeHtmlEntities_(value) {
+  return String(value).replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+}
+, 'PSA 10 
+
+// Sheet presentation
+
+function applySheetFormatting_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+
+  // Keep the underlying ratio precise; only round its display.
+  sheet.getRange('J2:J').setNumberFormat('0.00x');
+  sheet.getRange('G2:H').setNumberFormat('$0.00');
+}
+
+function ensureCollectionSummary_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+
+  // Keep the summary outside the application contract (A:P).
+  sheet.getRange('R1').setValue('Collection Summary');
+  sheet.getRange('R2').setValue('Raw Total');
+  sheet.getRange('S2').setFormula('=SUMPRODUCT(D2:D,G2:G)');
+  sheet.getRange('S2').setNumberFormat('$0.00');
+  sheet.getRange('R1:S1').setFontWeight('bold');
+  sheet.getRange('R2').setFontWeight('bold');
+}
+
+// PriceCharting links
+
+function ensurePriceChartingColumn_() {
+  ensureV020Schema_();
+}
+
+function updatePriceChartingLinks() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) throw new Error('Collection sheet was not found.');
+  ensurePriceChartingColumn_();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  let matched = 0, skipped = 0, missing = 0, errors = 0;
+
+  for (let row = 2; row <= lastRow; row++) {
+    const linkCell = sheet.getRange(row, 15);
+    const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
+
+    if (existingLink) {
+      skipped++;
+      continue;
+    }
+
+    const productId = String(sheet.getRange(row, 14).getValue() || '').trim();
+    const name = String(sheet.getRange(row, 5).getValue() || '').trim();
+    const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
+
+    if (!productId || !name || !cardNumber) {
+      missing++;
+      continue;
+    }
+
+    try {
+      const result = findPriceChartingUrl_({ name, cardNumber, tcgplayerId: productId });
+      if (result) {
+        setPriceChartingLink_(linkCell, result.url);
+        matched++;
+      } else {
+        linkCell.clearContent();
+        missing++;
+      }
+    } catch (error) {
+      errors++;
+      console.log('Row ' + row + ': PriceCharting ERROR: ' + error.message);
+    }
+
+    Utilities.sleep(300);
+  }
+
+  console.log(
+    'PriceCharting update finished. Matched: ' + matched +
+    ', cached: ' + skipped +
+    ', no match/missing data: ' + missing +
+    ', errors: ' + errors
+  );
+}
+
+function updatePriceChartingLinkForRow_(row, cardData) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) throw new Error('Collection sheet was not found.');
+  ensurePriceChartingColumn_();
+
+  const linkCell = sheet.getRange(row, 15);
+  const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
+  if (existingLink) return existingLink;
+
+  cardData = cardData || {};
+
+  const productId = String(
+    cardData.productId || sheet.getRange(row, 14).getDisplayValue() || ''
+  ).trim();
+
+  const name = String(
+    cardData.name || sheet.getRange(row, 5).getDisplayValue() || ''
+  ).trim();
+
+  const cardNumber = String(
+    cardData.cardNumber || sheet.getRange(row, 2).getDisplayValue() || ''
+  ).trim();
+
+  if (!productId || !name || !cardNumber) return null;
+
+  const result = findPriceChartingUrl_({
+    name,
+    cardNumber,
+    tcgplayerId: productId
+  });
+
+  if (!result) return null;
+
+  setPriceChartingLink_(linkCell, result.url);
+  return result.url;
+}
+
+function setPriceChartingLink_(cell, url) {
+  const richText = SpreadsheetApp.newRichTextValue()
+    .setText('↗ PriceCharting')
+    .setLinkUrl(url)
+    .build();
+  cell.setRichTextValue(richText);
+  cell.setNote('Verified against TCGplayer Product ID before linking.');
+}
+
+function findPriceChartingUrl_(card) {
+  const cleanName = String(card.name || '')
+    .replace(/[’']/g, '')
+    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cleanNumber = comparableCollectorNumber_(card.cardNumber);
+  const query = cleanName + ' ' + cleanNumber;
+  const searchUrl = 'https://www.pricecharting.com/search-products?type=prices&q=' + encodeURIComponent(query);
+
+  const searchResponse = fetchPriceChartingPage_(searchUrl);
+  const status = searchResponse.getResponseCode();
+  if (status !== 200) throw new Error('PriceCharting search returned HTTP ' + status);
+
+  const html = searchResponse.getContentText();
+  const canonicalUrl = extractPriceChartingCanonical_(html);
+
+  if (canonicalUrl) {
+    const tcgplayerId = extractPriceChartingTcgplayerId_(html);
+    if (tcgplayerId && String(tcgplayerId) === String(card.tcgplayerId)) {
+      return { url: canonicalUrl, tcgplayerId };
+    }
+  }
+
+  const candidates = extractPriceChartingCandidateUrls_(html);
+  const maxCandidates = 20;
+
+  for (let i = 0; i < Math.min(candidates.length, maxCandidates); i++) {
+    const url = candidates[i];
+    if (canonicalUrl && normalizePriceChartingUrl_(url) === normalizePriceChartingUrl_(canonicalUrl)) continue;
+
+    Utilities.sleep(300);
+    const response = fetchPriceChartingPage_(url);
+    if (response.getResponseCode() !== 200) continue;
+
+    const productHtml = response.getContentText();
+    const tcgplayerId = extractPriceChartingTcgplayerId_(productHtml);
+
+    if (tcgplayerId && String(tcgplayerId) === String(card.tcgplayerId)) {
+      return { url: extractPriceChartingCanonical_(productHtml) || url, tcgplayerId };
+    }
+  }
+
+  return null;
+}
+
+function fetchPriceChartingPage_(url) {
+  return UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    },
+    followRedirects: true,
+    muteHttpExceptions: true
+  });
+}
+
+function extractPriceChartingCanonical_(html) {
+  if (!html) return null;
+
+  let match = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+  if (!match) match = html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i);
+  if (!match) return null;
+
+  const url = decodeHtmlEntities_(match[1]);
+  if (!/^https:\/\/www\.pricecharting\.com\/game\//i.test(url)) return null;
+  return normalizePriceChartingUrl_(url);
+}
+
+function extractPriceChartingCandidateUrls_(html) {
+  if (!html) return [];
+
+  const urls = [];
+  const regex = /href=["']((?:https:\/\/www\.pricecharting\.com)?\/game\/[^"'?#]+)["']/gi;
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    let url = decodeHtmlEntities_(match[1]);
+    if (url.startsWith('/')) url = 'https://www.pricecharting.com' + url;
+    if (!url.startsWith('https://www.pricecharting.com/game/')) continue;
+
+    url = normalizePriceChartingUrl_(url);
+    if (!urls.includes(url)) urls.push(url);
+  }
+
+  return urls;
+}
+
+function extractPriceChartingTcgplayerId_(html) {
+  if (!html) return null;
+
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ');
+
+  const patterns = [
+    /TCGPlayer\s*ID\s*:?\s*([0-9]{4,})/i,
+    /TCGplayer\s*ID\s*:?\s*([0-9]{4,})/i,
+    /tcg[-_ ]?player[-_ ]?id[^0-9]{0,100}([0-9]{4,})/i
+  ];
+
+  for (let i = 0; i < patterns.length; i++) {
+    const match = text.match(patterns[i]);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function normalizePriceChartingUrl_(url) {
+  return String(url).replace(/&amp;/g, '&').replace(/[?#].*$/, '').replace(/\/$/, '');
+}
+
+function decodeHtmlEntities_(value) {
+  return String(value).replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+}
+, 'PSA10 Sales', 'PSA10/Raw',
+    'PSA Watch', 'Grade Candidates', 'Updated',
     'TCGplayer ID', 'PriceCharting'
   ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+}
+
+// Compatibility helper for existing calls.
+function ensureV020Schema_() {
+  ensureV021Schema_();
 }
 
 // Sheet presentation
@@ -479,7 +1048,7 @@ function updatePriceChartingLinks() {
   let matched = 0, skipped = 0, missing = 0, errors = 0;
 
   for (let row = 2; row <= lastRow; row++) {
-    const linkCell = sheet.getRange(row, 16);
+    const linkCell = sheet.getRange(row, 15);
     const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
 
     if (existingLink) {
@@ -487,7 +1056,7 @@ function updatePriceChartingLinks() {
       continue;
     }
 
-    const productId = String(sheet.getRange(row, 15).getValue() || '').trim();
+    const productId = String(sheet.getRange(row, 14).getValue() || '').trim();
     const name = String(sheet.getRange(row, 5).getValue() || '').trim();
     const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
 
@@ -526,14 +1095,14 @@ function updatePriceChartingLinkForRow_(row, cardData) {
   if (!sheet) throw new Error('Collection sheet was not found.');
   ensurePriceChartingColumn_();
 
-  const linkCell = sheet.getRange(row, 16);
+  const linkCell = sheet.getRange(row, 15);
   const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
   if (existingLink) return existingLink;
 
   cardData = cardData || {};
 
   const productId = String(
-    cardData.productId || sheet.getRange(row, 15).getDisplayValue() || ''
+    cardData.productId || sheet.getRange(row, 14).getDisplayValue() || ''
   ).trim();
 
   const name = String(
