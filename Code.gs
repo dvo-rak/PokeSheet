@@ -1,7 +1,7 @@
 const CONFIG = {
   SHEET: 'Collection',
   TCGDEX_BASE: 'https://api.tcgdex.net/v2/en',
-  VERSION: '0.1.0',
+  VERSION: '0.1.1',
   PSA_REFRESH: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
 };
 
@@ -57,6 +57,12 @@ function normalizeCollectorNumber_(value) {
   return text;
 }
 
+function comparableCollectorNumber_(value) {
+  const text = normalizeCollectorNumber_(value).toLowerCase();
+  if (/^\d+$/.test(text)) return String(parseInt(text, 10));
+  return text;
+}
+
 function normalizeVariant_(variant) {
   const value = String(variant || '').trim().toLowerCase();
   if (value === 'normal') return 'Normal';
@@ -81,6 +87,39 @@ function getAvailableVariants_(card) {
   return [...new Set(variants)];
 }
 
+function getTcgdexCard_(setId, collectorNumber) {
+  const cleanSetId = String(setId || '').trim();
+  const cleanNumber = normalizeCollectorNumber_(collectorNumber);
+  if (!cleanSetId || !cleanNumber) throw new Error('Set ID or card number is missing.');
+
+  const exactUrl = CONFIG.TCGDEX_BASE + '/cards/' + encodeURIComponent(cleanSetId + '-' + cleanNumber);
+  const exactResponse = UrlFetchApp.fetch(exactUrl, { muteHttpExceptions: true });
+  if (exactResponse.getResponseCode() === 200) return JSON.parse(exactResponse.getContentText());
+
+  const set = tcgdexFetch_(CONFIG.TCGDEX_BASE + '/sets/' + encodeURIComponent(cleanSetId));
+  const cards = Array.isArray(set.cards) ? set.cards : [];
+  const wanted = comparableCollectorNumber_(cleanNumber);
+  const match = cards.find(card => comparableCollectorNumber_(card.localId) === wanted);
+  if (!match) throw new Error('Card #' + cleanNumber + ' was not found in TCGdex set ' + cleanSetId + '.');
+
+  return tcgdexFetch_(CONFIG.TCGDEX_BASE + '/cards/' + encodeURIComponent(match.id));
+}
+
+function getTcgdexProductIds_(card) {
+  const tcg = card.pricing?.tcgplayer || {};
+  return [tcg.normal?.productId, tcg.holofoil?.productId, tcg['reverse-holofoil']?.productId]
+    .filter(value => value !== null && value !== undefined && value !== '')
+    .map(String);
+}
+
+function isCustomPrinting_(card, productId) {
+  const id = String(productId || '').trim();
+  if (!id) return false;
+  const ids = getTcgdexProductIds_(card);
+  if (ids.length === 0) return false;
+  return !ids.includes(id);
+}
+
 // Sidebar
 
 function showCardSidebar() {
@@ -99,7 +138,7 @@ function searchCardsForSidebar(name, collectorNumber) {
   let candidates = cards;
   if (cleanNumber) {
     candidates = cards.filter(card =>
-      String(card.localId).trim().toLowerCase() === cleanNumber.toLowerCase()
+      comparableCollectorNumber_(card.localId) === comparableCollectorNumber_(cleanNumber)
     );
   }
 
@@ -149,9 +188,7 @@ function findCardInSetForSidebar(setId, collectorNumber) {
   if (!cleanSetId) throw new Error('Select a set.');
   if (!cleanNumber) throw new Error('Enter a card number.');
 
-  const card = tcgdexFetch_(
-    CONFIG.TCGDEX_BASE + '/cards/' + encodeURIComponent(cleanSetId + '-' + cleanNumber)
-  );
+  const card = getTcgdexCard_(cleanSetId, cleanNumber);
 
   return {
     id: card.id,
@@ -172,64 +209,80 @@ function addCardFromSidebar(data) {
   if (!sheet) throw new Error('Collection sheet was not found.');
 
   const setId = String(data.setId || '').trim();
-  const cardNumber = normalizeCollectorNumber_(data.cardNumber);
+  const requestedCardNumber = normalizeCollectorNumber_(data.cardNumber);
   const variant = normalizeVariant_(data.variant);
   const qty = Number(data.qty);
+  const customPrinting = data.customPrinting === true;
+  const customProductId = String(data.productId || '').trim();
 
   if (!setId) throw new Error('Set ID is missing.');
-  if (!cardNumber) throw new Error('Card number is missing.');
+  if (!requestedCardNumber) throw new Error('Card number is missing.');
   if (!Number.isInteger(qty) || qty < 1) throw new Error('Quantity must be a whole number greater than 0.');
+  if (customPrinting && !/^\d+$/.test(customProductId)) {
+    throw new Error('Custom printing requires a valid numeric TCGplayer Product ID.');
+  }
 
+  const tcgdexCard = getTcgdexCard_(setId, requestedCardNumber);
+  const cardNumber = String(tcgdexCard.localId || requestedCardNumber);
   const lastRow = sheet.getLastRow();
 
-  // A duplicate is the same Set ID + Card # + Variant. Only increase quantity.
   if (lastRow >= 2) {
-    const values = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
-
+    const values = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
     for (let index = 0; index < values.length; index++) {
       const row = index + 2;
-      if (
-        String(values[index][0]).trim().toLowerCase() === setId.toLowerCase() &&
-        String(values[index][1]).trim().toLowerCase() === cardNumber.toLowerCase() &&
-        String(values[index][2]).trim().toLowerCase() === variant.toLowerCase()
-      ) {
-        const oldQty = Number(values[index][3]) || 0;
-        const newQty = oldQty + qty;
-        sheet.getRange(row, 4).setValue(newQty);
-        return {
-          status: 'updated',
-          row,
-          oldQty,
-          newQty,
-          name: sheet.getRange(row, 5).getValue() || data.name || setId + '-' + cardNumber
-        };
-      }
+      const sameCard =
+        String(values[index][0] || '').trim().toLowerCase() === setId.toLowerCase() &&
+        comparableCollectorNumber_(values[index][1]) === comparableCollectorNumber_(cardNumber) &&
+        String(values[index][2] || '').trim().toLowerCase() === variant.toLowerCase();
+
+      if (!sameCard) continue;
+      if (customPrinting && String(values[index][15] || '').trim() !== customProductId) continue;
+
+      const oldQty = Number(values[index][3]) || 0;
+      const newQty = oldQty + qty;
+      sheet.getRange(row, 4).setValue(newQty);
+      return {
+        status: 'updated',
+        row,
+        oldQty,
+        newQty,
+        name: sheet.getRange(row, 5).getValue() || data.name || setId + '-' + cardNumber
+      };
     }
   }
 
   const newRow = Math.max(sheet.getLastRow() + 1, 2);
-  sheet.getRange(newRow, 1, 1, 4).setValues([[setId, cardNumber, variant, qty]]);
-  if (data.name) sheet.getRange(newRow, 5).setValue(data.name);
-  if (data.rarity) sheet.getRange(newRow, 6).setValue(data.rarity);
+  sheet.getRange(newRow, 1).setValue(setId);
+  const numberCell = sheet.getRange(newRow, 2);
+  numberCell.setNumberFormat('@');
+  numberCell.setValue(cardNumber);
+  sheet.getRange(newRow, 3).setValue(variant);
+  sheet.getRange(newRow, 4).setValue(qty);
+  sheet.getRange(newRow, 5).setValue(tcgdexCard.name || data.name || '');
+  sheet.getRange(newRow, 6).setValue(tcgdexCard.rarity || data.rarity || '');
   sheet.getRange(newRow, 12).setValue('AUTO');
 
-  // Row 2 is used as the validation template.
   const variantValidation = sheet.getRange(2, 3).getDataValidation();
   if (variantValidation) sheet.getRange(newRow, 3).setDataValidation(variantValidation);
-
   const watchValidation = sheet.getRange(2, 12).getDataValidation();
   if (watchValidation) sheet.getRange(newRow, 12).setDataValidation(watchValidation);
 
-  updateRawPriceForRow_(newRow);
+  if (customPrinting) {
+    sheet.getRange(newRow, 16).setValue(customProductId);
+    updateRawPriceForRow_(newRow, { preserveProductId: true, card: tcgdexCard });
+  } else {
+    updateRawPriceForRow_(newRow, { card: tcgdexCard });
+  }
 
   return {
     status: 'created',
     row: newRow,
     qty,
-    name: sheet.getRange(newRow, 5).getValue() || data.name || setId + '-' + cardNumber,
+    name: sheet.getRange(newRow, 5).getValue(),
     rawCM: sheet.getRange(newRow, 7).getValue(),
     rawTCG: sheet.getRange(newRow, 8).getValue(),
-    productId: sheet.getRange(newRow, 16).getValue()
+    productId: sheet.getRange(newRow, 16).getValue(),
+    customPrinting
   };
 }
 
@@ -244,7 +297,7 @@ function updateRawPrices() {
 
   for (let row = 2; row <= lastRow; row++) {
     const setId = String(sheet.getRange(row, 1).getValue()).trim();
-    const cardNumber = String(sheet.getRange(row, 2).getValue()).trim();
+    const cardNumber = String(sheet.getRange(row, 2).getDisplayValue()).trim();
     if (!setId || !cardNumber) continue;
 
     try {
@@ -255,24 +308,64 @@ function updateRawPrices() {
   }
 }
 
-function updateRawPriceForRow_(row) {
+function updateRawPriceForRow_(row, options) {
+  options = options || {};
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
-  const setId = String(sheet.getRange(row, 1).getValue()).trim();
-  const cardNumber = String(sheet.getRange(row, 2).getValue()).trim();
-  const variant = String(sheet.getRange(row, 3).getValue()).trim();
-  if (!setId || !cardNumber) return;
+  if (!sheet) throw new Error('Collection sheet was not found.');
 
-  const card = tcgdexFetch_(
-    CONFIG.TCGDEX_BASE + '/cards/' + encodeURIComponent(setId + '-' + cardNumber)
-  );
+  const setId = String(sheet.getRange(row, 1).getValue()).trim();
+  const numberCell = sheet.getRange(row, 2);
+  const storedCardNumber = String(numberCell.getDisplayValue()).trim();
+  const variant = String(sheet.getRange(row, 3).getValue()).trim();
+  if (!setId || !storedCardNumber) return;
+
+  const existingProductId = String(sheet.getRange(row, 16).getValue() || '').trim();
+  const card = options.card || getTcgdexCard_(setId, storedCardNumber);
+  const exactLocalId = String(card.localId || storedCardNumber);
+
+  if (exactLocalId !== storedCardNumber) {
+    numberCell.setNumberFormat('@');
+    numberCell.setValue(exactLocalId);
+  }
 
   sheet.getRange(row, 5).setValue(card.name || '');
   sheet.getRange(row, 6).setValue(card.rarity || '');
 
   const pricing = card.pricing || {};
   const cm = pricing.cardmarket || {};
-  let cmPrice = '';
+  const tcg = pricing.tcgplayer || {};
+  let tcgVariant = null;
+  if (variant === 'Normal') tcgVariant = tcg.normal ?? null;
+  else if (variant === 'Holo') tcgVariant = tcg.holofoil ?? null;
+  else if (variant === 'Reverse') tcgVariant = tcg['reverse-holofoil'] ?? null;
 
+  const customPrinting = options.preserveProductId === true || isCustomPrinting_(card, existingProductId);
+
+  if (customPrinting) {
+    sheet.getRange(row, 7).clearContent();
+    const tcgCell = sheet.getRange(row, 8);
+    const existingRawPrice = tcgCell.getValue();
+
+    if (existingRawPrice !== '' && existingRawPrice !== null) {
+      tcgCell.setNote(
+        'Custom TCGplayer printing.\n' +
+        'Raw TCGplayer market price from Pokémon Price Tracker.\n' +
+        'TCGplayer Product ID: ' + existingProductId
+      );
+    } else {
+      tcgCell.setNote(
+        'Custom TCGplayer printing.\n' +
+        'Raw TCG price will be populated during the next PSA update.\n' +
+        'TCGplayer Product ID: ' + existingProductId
+      );
+    }
+
+    sheet.getRange(row, 16).setValue(existingProductId);
+    sheet.getRange(row, 15).setValue(new Date());
+    return;
+  }
+
+  let cmPrice = '';
   if (variant === 'Normal') {
     cmPrice = cm.trend ?? cm.avg30 ?? cm.avg7 ?? cm.avg ?? '';
   } else if (variant === 'Holo' || variant === 'Reverse') {
@@ -280,24 +373,15 @@ function updateRawPriceForRow_(row) {
   } else {
     cmPrice = cm.trend ?? cm.avg30 ?? '';
   }
-
   sheet.getRange(row, 7).setValue(cmPrice);
-
-  const tcg = pricing.tcgplayer || {};
-  let tcgVariant = null;
-  if (variant === 'Normal') tcgVariant = tcg.normal ?? null;
-  else if (variant === 'Holo') tcgVariant = tcg.holofoil ?? null;
-  else if (variant === 'Reverse') tcgVariant = tcg['reverse-holofoil'] ?? null;
 
   let tcgPrice = '';
   let productId = '';
-
   if (tcgVariant) {
     tcgPrice = tcgVariant.marketPrice ?? tcgVariant.midPrice ?? tcgVariant.lowPrice ?? '';
     productId = tcgVariant.productId ?? '';
   }
 
-  // TCGplayer productId is generally shared by printing variants of the same card.
   if (!productId) {
     for (const candidate of [tcg.normal, tcg.holofoil, tcg['reverse-holofoil']]) {
       if (candidate?.productId) {
@@ -316,7 +400,6 @@ function updateRawPriceForRow_(row) {
     if (tcg.normal) available.push('Normal');
     if (tcg.holofoil) available.push('Holo');
     if (tcg['reverse-holofoil']) available.push('Reverse');
-
     tcgCell.setNote(
       '⚠️ Variant "' + variant + '" was not found.\nAvailable variants: ' +
       (available.join(', ') || 'unknown')
@@ -362,7 +445,6 @@ function updatePSAPrices() {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
 
-  // A lookup with eBay data consumes additional API credits, so leave quota headroom.
   const MAX_LOOKUPS = 40;
   let lookupsUsed = 0;
 
@@ -370,8 +452,7 @@ function updatePSAPrices() {
     if (lookupsUsed >= MAX_LOOKUPS) break;
 
     const setId = String(sheet.getRange(row, 1).getValue()).trim();
-    const cardNumber = String(sheet.getRange(row, 2).getValue()).trim();
-    const rawTCG = Number(sheet.getRange(row, 8).getValue()) || 0;
+    const cardNumber = String(sheet.getRange(row, 2).getDisplayValue()).trim();
     const oldPSA10 = Number(sheet.getRange(row, 9).getValue()) || 0;
     let watchMode = String(sheet.getRange(row, 12).getValue()).trim().toUpperCase();
     const psaUpdated = sheet.getRange(row, 13).getValue();
@@ -387,10 +468,17 @@ function updatePSAPrices() {
       watchMode = 'AUTO';
       sheet.getRange(row, 12).setValue('AUTO');
     }
-
     if (!shouldRefreshPSA(oldPSA10, psaUpdated, watchMode)) continue;
 
     try {
+      let customPrinting = false;
+      try {
+        const tcgdexCard = getTcgdexCard_(setId, cardNumber);
+        customPrinting = isCustomPrinting_(tcgdexCard, productId);
+      } catch (error) {
+        console.log('Row ' + row + ': custom printing detection failed: ' + error.message);
+      }
+
       const url =
         'https://www.pokemonpricetracker.com/api/v2/cards?tcgPlayerId=' +
         encodeURIComponent(productId) +
@@ -416,6 +504,34 @@ function updatePSAPrices() {
         continue;
       }
 
+      if (customPrinting) {
+        const rawMarketPrice = card.prices?.market ?? null;
+        const tcgCell = sheet.getRange(row, 8);
+
+        if (rawMarketPrice !== null && rawMarketPrice !== '') {
+          tcgCell.setValue(Number(rawMarketPrice));
+          const primaryPrinting = card.prices?.primaryPrinting || card.printingsAvailable?.[0] || 'unknown';
+          const priceUpdated = card.prices?.lastUpdated
+            ? Utilities.formatDate(new Date(card.prices.lastUpdated), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')
+            : 'unknown';
+
+          tcgCell.setNote(
+            'Custom TCGplayer printing.\n' +
+            'Market price from Pokémon Price Tracker.\n' +
+            'TCGplayer Product ID: ' + productId +
+            '\nPrinting: ' + primaryPrinting +
+            '\nPrice updated: ' + priceUpdated
+          );
+        } else {
+          tcgCell.setNote(
+            'Custom TCGplayer printing.\n' +
+            'Pokémon Price Tracker returned no market price.\n' +
+            'TCGplayer Product ID: ' + productId
+          );
+        }
+      }
+
+      const rawTCG = Number(sheet.getRange(row, 8).getValue()) || 0;
       const salesByGrade = card.ebay?.salesByGrade || {};
       const psa10 = salesByGrade.psa10 || null;
 
@@ -429,7 +545,6 @@ function updatePSAPrices() {
 
         sheet.getRange(row, 9).setValue(psa10Price);
         sheet.getRange(row, 10).setValue(psa10Sales);
-
         if (psa10Price !== '' && rawTCG > 0) {
           sheet.getRange(row, 11).setValue(Number(psa10Price) / rawTCG);
         } else {
@@ -476,3 +591,4 @@ function updatePSAPrices() {
 
   console.log('PSA update finished. Lookups used: ' + lookupsUsed + '/' + MAX_LOOKUPS);
 }
+
