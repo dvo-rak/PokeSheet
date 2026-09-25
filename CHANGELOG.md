@@ -53,6 +53,5 @@
 - PSA 10 / raw multiplier.
 - PSA refresh cache with AUTO, HIGH, LOW, and OFF modes.
 - API lookup cap for PSA refresh runs.
-- In-sheet API key setup using Apps Script Script Properties.
 - English source comments and repository documentation.
 - CLAUDE.md development context.
