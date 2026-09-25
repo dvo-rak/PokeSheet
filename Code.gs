@@ -512,12 +512,12 @@ function ensureCollectionSummary_() {
   if (!sheet) return;
 
   // Keep the summary outside the application contract (A:O).
-  sheet.getRange('R1').setValue('Collection Summary');
-  sheet.getRange('R2').setValue('Raw Total');
-  sheet.getRange('S2').setFormula('=SUMPRODUCT(D2:D,G2:G)');
-  sheet.getRange('S2').setNumberFormat('$0.00');
-  sheet.getRange('R1:S1').setFontWeight('bold');
-  sheet.getRange('R2').setFontWeight('bold');
+  sheet.getRange('Q1').setValue('Collection Summary');
+  sheet.getRange('Q2').setValue('Raw Total');
+  sheet.getRange('R2').setFormula('=SUMPRODUCT(D2:D,G2:G)');
+  sheet.getRange('R2').setNumberFormat('$0.00');
+  sheet.getRange('Q1:R1').setFontWeight('bold');
+  sheet.getRange('Q2').setFontWeight('bold');
 }
 
 // PriceCharting links
