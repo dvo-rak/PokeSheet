@@ -742,5 +742,3 @@ function normalizePriceChartingUrl_(url) {
 function decodeHtmlEntities_(value) {
   return String(value).replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
 }
-, 'PSA 10 
-
