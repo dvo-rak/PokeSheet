@@ -32,7 +32,7 @@ PSA updates read the verified PriceCharting URL from column Q and parse PSA 10 p
 
 The sheet name must be Collection.
 
-Columns are positional and are part of the application contract:\n\nA Set ID\nB Card #\nC Variant\nD Qty\nE Name\nF Rarity\nG Raw $\nH PSA 10 $\nI PSA10 Sales\nJ PSA10/Raw\nK PSA Watch\nL PSA Updated\nM Grade Candidates\nN Updated\nO TCGplayer ID\nP PriceCharting
+Columns are positional and are part of the application contract:\n\nA Set ID\nB Card #\nC Variant\nD Qty\nE Name\nF Rarity\nG Raw $\nH PSA 10 $\nI PSA10 Sales\nJ PSA10/Raw\nK Refresh\nL PSA Updated\nM Grade Candidates\nN Updated\nO TCGplayer ID\nP PriceCharting
 
 Do not reorder columns without migrating every positional read/write.
 
