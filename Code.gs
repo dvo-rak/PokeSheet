@@ -1,7 +1,7 @@
 const CONFIG = {
   SHEET: 'Collection',
   TCGDEX_BASE: 'https://api.tcgdex.net/v2/en',
-  VERSION: '0.1.3',
+  VERSION: '0.1.4',
   PSA_REFRESH: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
 };
 
@@ -461,32 +461,24 @@ function updatePSAPrices() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Collection sheet was not found.');
 
-  const apiKey = PropertiesService.getScriptProperties().getProperty('POKEMON_PRICE_API_KEY');
-  if (!apiKey) {
-    throw new Error('POKEMON_PRICE_API_KEY was not found. Use ⚡ Pokémon → 🔑 Setup API key first.');
-  }
+  ensurePriceChartingColumn_();
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
 
   const MAX_LOOKUPS = 40;
   let lookupsUsed = 0;
+  let updated = 0;
+  let missingLink = 0;
+  let noPrice = 0;
+  let errors = 0;
 
   for (let row = 2; row <= lastRow; row++) {
     if (lookupsUsed >= MAX_LOOKUPS) break;
 
-    const setId = String(sheet.getRange(row, 1).getValue()).trim();
-    const cardNumber = String(sheet.getRange(row, 2).getDisplayValue()).trim();
     const oldPSA10 = Number(sheet.getRange(row, 9).getValue()) || 0;
     let watchMode = String(sheet.getRange(row, 12).getValue()).trim().toUpperCase();
     const psaUpdated = sheet.getRange(row, 13).getValue();
-    const productId = String(sheet.getRange(row, 16).getValue()).trim();
-
-    if (!setId || !cardNumber) continue;
-    if (!productId) {
-      console.log('Row ' + row + ': missing TCGplayer ID');
-      continue;
-    }
 
     if (!watchMode) {
       watchMode = 'AUTO';
@@ -495,125 +487,110 @@ function updatePSAPrices() {
     if (!shouldRefreshPSA(oldPSA10, psaUpdated, watchMode)) continue;
 
     try {
-      let customPrinting = false;
-      try {
-        const tcgdexCard = getTcgdexCard_(setId, cardNumber);
-        customPrinting = isCustomPrinting_(tcgdexCard, productId);
-      } catch (error) {
-        console.log('Row ' + row + ': custom printing detection failed: ' + error.message);
+      let priceChartingUrl = sheet.getRange(row, 17).getRichTextValue()?.getLinkUrl() || '';
+
+      // Backfill a missing verified PriceCharting link before giving up.
+      if (!priceChartingUrl) {
+        priceChartingUrl = updatePriceChartingLinkForRow_(row) || '';
       }
 
-      const url =
-        'https://www.pokemonpricetracker.com/api/v2/cards?tcgPlayerId=' +
-        encodeURIComponent(productId) +
-        '&includeEbay=true';
+      if (!priceChartingUrl) {
+        missingLink++;
+        console.log('Row ' + row + ': missing verified PriceCharting link');
+        continue;
+      }
 
-      const response = UrlFetchApp.fetch(url, {
-        method: 'get',
-        headers: { Authorization: 'Bearer ' + apiKey, Accept: 'application/json' },
-        muteHttpExceptions: true
-      });
-
+      const response = fetchPriceChartingPage_(priceChartingUrl);
       lookupsUsed++;
+
       const status = response.getResponseCode();
       if (status !== 200) {
-        console.log('Row ' + row + ': API HTTP ' + status);
+        errors++;
+        console.log('Row ' + row + ': PriceCharting HTTP ' + status);
         continue;
       }
 
-      const json = JSON.parse(response.getContentText());
-      const card = Array.isArray(json.data) ? (json.data[0] || null) : (json.data || null);
-      if (!card) {
-        console.log('Row ' + row + ': API returned no card');
+      const data = extractPriceChartingPSA10_(response.getContentText());
+
+      // Fail closed: never erase a previous PSA value if PriceCharting markup
+      // changes or the PSA 10 price cannot be identified safely.
+      if (data.price === null) {
+        noPrice++;
+        console.log('Row ' + row + ': PriceCharting PSA 10 price not found');
         continue;
-      }
-
-      if (customPrinting) {
-        const rawMarketPrice = card.prices?.market ?? null;
-        const tcgCell = sheet.getRange(row, 8);
-
-        if (rawMarketPrice !== null && rawMarketPrice !== '') {
-          tcgCell.setValue(Number(rawMarketPrice));
-          const primaryPrinting = card.prices?.primaryPrinting || card.printingsAvailable?.[0] || 'unknown';
-          const priceUpdated = card.prices?.lastUpdated
-            ? Utilities.formatDate(new Date(card.prices.lastUpdated), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')
-            : 'unknown';
-
-          tcgCell.setNote(
-            'Custom TCGplayer printing.\n' +
-            'Market price from Pokémon Price Tracker.\n' +
-            'TCGplayer Product ID: ' + productId +
-            '\nPrinting: ' + primaryPrinting +
-            '\nPrice updated: ' + priceUpdated
-          );
-        } else {
-          tcgCell.setNote(
-            'Custom TCGplayer printing.\n' +
-            'Pokémon Price Tracker returned no market price.\n' +
-            'TCGplayer Product ID: ' + productId
-          );
-        }
       }
 
       const rawTCG = Number(sheet.getRange(row, 8).getValue()) || 0;
-      const salesByGrade = card.ebay?.salesByGrade || {};
-      const psa10 = salesByGrade.psa10 || null;
 
-      if (psa10) {
-        const psa10Price =
-          psa10.smartMarketPrice?.price ??
-          psa10.medianPrice ??
-          psa10.averagePrice ??
-          '';
-        const psa10Sales = Number(psa10.count) || 0;
+      sheet.getRange(row, 9).setValue(data.price);
+      sheet.getRange(row, 10).setValue(data.sales);
 
-        sheet.getRange(row, 9).setValue(psa10Price);
-        sheet.getRange(row, 10).setValue(psa10Sales);
-        if (psa10Price !== '' && rawTCG > 0) {
-          sheet.getRange(row, 11).setValue(Number(psa10Price) / rawTCG);
-        } else {
-          sheet.getRange(row, 11).clearContent();
-        }
-
-        const confidence = psa10.smartMarketPrice?.confidence ?? 'unknown';
-        const smartPrice = psa10.smartMarketPrice?.price ?? '';
-        const lastSale = psa10.lastSaleDate
-          ? Utilities.formatDate(new Date(psa10.lastSaleDate), Session.getScriptTimeZone(), 'yyyy-MM-dd')
-          : 'unknown';
-
-        sheet.getRange(row, 9).setNote([
-          'PSA 10',
-          'Sales: ' + psa10Sales,
-          'Smart price: ' + (smartPrice !== '' ? '$' + smartPrice : 'N/A'),
-          'Median: ' + (psa10.medianPrice != null ? '$' + psa10.medianPrice : 'N/A'),
-          'Average: ' + (psa10.averagePrice != null ? '$' + psa10.averagePrice : 'N/A'),
-          'Range: ' +
-            (psa10.minPrice != null ? '$' + psa10.minPrice : '?') +
-            ' – ' +
-            (psa10.maxPrice != null ? '$' + psa10.maxPrice : '?'),
-          'Confidence: ' + confidence,
-          'Last sale: ' + lastSale
-        ].join('\n'));
+      if (rawTCG > 0) {
+        sheet.getRange(row, 11).setValue(data.price / rawTCG);
       } else {
-        sheet.getRange(row, 9).clearContent();
-        sheet.getRange(row, 10).setValue(0);
         sheet.getRange(row, 11).clearContent();
-
-        const availableGrades = Object.keys(salesByGrade);
-        sheet.getRange(row, 9).setNote(
-          availableGrades.length > 0
-            ? 'No PSA 10 sales data found.\nAvailable grades: ' + availableGrades.join(', ')
-            : 'No graded sales data found.'
-        );
       }
 
+      const note = [
+        'PSA 10 — PriceCharting',
+        'Price: $' + data.price.toFixed(2),
+        'Sold listings: ' + data.sales,
+        'Volume: ' + (data.volume || 'unknown'),
+        'Source: verified PriceCharting product page'
+      ].join('\n');
+
+      sheet.getRange(row, 9).setNote(note);
       sheet.getRange(row, 13).setValue(new Date());
+      updated++;
+
+      Utilities.sleep(300);
     } catch (error) {
-      console.log('Row ' + row + ': ERROR: ' + error.message);
+      errors++;
+      console.log('Row ' + row + ': PSA ERROR: ' + error.message);
     }
   }
 
-  console.log('PSA update finished. Lookups used: ' + lookupsUsed + '/' + MAX_LOOKUPS);
+  console.log(
+    'PSA update finished. Updated: ' + updated +
+    ', lookups: ' + lookupsUsed + '/' + MAX_LOOKUPS +
+    ', missing PriceCharting link: ' + missingLink +
+    ', PSA price not found: ' + noPrice +
+    ', errors: ' + errors
+  );
+}
+
+function extractPriceChartingPSA10_(html) {
+  if (!html) return { price: null, sales: 0, volume: null };
+
+  const priceMatch = html.match(
+    /<td[^>]*id=["']manual_only_price["'][^>]*>[\s\S]*?<span[^>]*class=["'][^"']*\bprice\b[^"']*["'][^>]*>\s*\$([\d,.]+)\s*<\/span>/i
+  );
+
+  const salesMatch = html.match(
+    /<option[^>]*value=["']completed-auctions-manual-only["'][^>]*>\s*PSA\s*10\s*\(([\d,]+)\)\s*<\/option>/i
+  );
+
+  const volumeMatch = html.match(
+    /<td[^>]*data-show-tab=["']completed-auctions-manual-only["'][^>]*>[\s\S]*?<a[^>]*>\s*([^<]+?)\s*<\/a>/i
+  );
+
+  const price = priceMatch
+    ? Number(priceMatch[1].replace(/,/g, ''))
+    : null;
+
+  const sales = salesMatch
+    ? Number(salesMatch[1].replace(/,/g, ''))
+    : 0;
+
+  const volume = volumeMatch
+    ? decodeHtmlEntities_(volumeMatch[1]).replace(/\s+/g, ' ').trim()
+    : null;
+
+  return {
+    price: Number.isFinite(price) ? price : null,
+    sales: Number.isFinite(sales) ? sales : 0,
+    volume
+  };
 }
 
 
