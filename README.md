@@ -49,17 +49,19 @@ PSA Watch values: AUTO, HIGH, LOW, OFF.
 
 The master spreadsheet is intended to stay clean and contain no personal collection data or API keys. Make your own copy before using the tracker.
 
-## Installation for a small private group
+## Quick start
 
-The simplest distribution method is a prepared Google Sheets template.
-
-1. Make a copy of the template spreadsheet.
+1. Make a copy of the Google Sheets template above.
 2. Reload the spreadsheet and authorize the Apps Script when Google asks.
-3. Use ⚡ Pokémon → ➕ Add cards to open the sidebar.
-4. If PSA pricing is wanted, create a personal Pokémon Price Tracker API key.
-5. Use ⚡ Pokémon → 🔑 Setup API key to save it.
+3. Use ⚡ Pokémon → ➕ Add cards to start adding cards.
+4. For PSA 10 pricing, create your own API key at [Pokémon Price Tracker](https://www.pokemonpricetracker.com/).
+5. In the spreadsheet, use ⚡ Pokémon → 🔑 Setup API key and paste your key.
 
-Every user should use their own API key.
+Every user should use their own Pokémon Price Tracker API key. TCGdex raw pricing does not require this key.
+
+## Pokémon Price Tracker API key
+
+The API key is only required for PSA / graded-price updates. Get your own key from [Pokémon Price Tracker](https://www.pokemonpricetracker.com/), then save it through ⚡ Pokémon → 🔑 Setup API key.
 
 ## API key security
 
@@ -107,6 +109,10 @@ Cards that have never been checked are eligible for their initial PSA lookup reg
 Current source version: 0.1.0
 
 See CHANGELOG.md for release notes and CLAUDE.md for architecture and maintenance context.
+
+## License
+
+MIT License. See LICENSE.
 
 ## Disclaimer
 
