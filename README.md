@@ -44,12 +44,6 @@ PriceCharting data is parsed from product-page HTML, so markup changes may requi
 
 The sheet name must be `Collection`.
 
-## Existing-sheet migration to 0.2.0
-
-On reload, PokeSheet detects the old `Raw CM €` column and removes it automatically. Existing columns shift into the 0.2.0 layout and headers are normalized.
-
-Back up the sheet first if you want an easy rollback.
-
 ## Quick start
 
 1. Make a copy of the master tracker.
