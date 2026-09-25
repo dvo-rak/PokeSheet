@@ -22,9 +22,9 @@ Optimize for fast physical-card entry, understandable code, low maintenance, and
 
 TCGdex base URL: https://api.tcgdex.net/v2/en
 
-TCGdex provides card search, details, sets, images, Cardmarket pricing, TCGplayer pricing, and TCGplayer product IDs.
+TCGdex provides card search, details, sets, images, Cardmarket pricing, TCGplayer pricing, and TCGplayer product IDs for standard printings. Collector numbers are resolved defensively so leading zeroes such as 034 survive Google Sheets coercion.
 
-Pokémon Price Tracker provides graded sales and PSA 10 pricing.
+Pokémon Price Tracker provides graded sales and PSA 10 pricing. For custom / unlisted printings, the same PSA response also supplies the Raw TCG market price using the manually selected TCGplayer Product ID.
 
 The Pokémon Price Tracker key must never be committed. It is stored in Apps Script Script Properties under POKEMON_PRICE_API_KEY.
 
@@ -55,7 +55,7 @@ Do not reorder columns without migrating every positional read/write.
 
 ## Core invariants
 
-Card identity is Set ID + Card # + Variant.
+Standard card identity is Set ID + Card # + Variant. Custom / unlisted printings additionally include the TCGplayer Product ID so multiple special printings with the same collector number can coexist.
 
 Adding the same identity again increments Qty and must not create a second row. Normal and Reverse copies are separate rows.
 
@@ -104,6 +104,8 @@ A new card should:
 6. NOT trigger a PSA lookup automatically.
 
 PSA is batch-updated to conserve API credits.
+
+Custom / unlisted printings are an escape hatch for products that TCGdex does not expose as a separate printing. The sidebar accepts a manual numeric TCGplayer Product ID. Raw TCG pricing for those rows is filled from Pokémon Price Tracker during PSA updates; normal TCGdex raw refreshes must preserve both that price and the manual Product ID.
 
 ## Security
 
@@ -157,6 +159,7 @@ Column N, Grade Candidates, is a manual count of physical copies worth inspectin
 
 - TCGdex swsh3-136: Furret. Known during development to expose Normal and Reverse TCGplayer variants.
 - TCGplayer product ID 42360: Base Set Blastoise #2/102. Used during development to validate the PSA 10 parser.
+- TCGplayer product ID 637651: Ethan's Typhlosion 034/182 (Non-holo), Deck Exclusives. Used to validate custom printing identity, leading-zero collector numbers, custom raw TCG pricing, and the valid no-PSA-10-sales state.
 
 External market data changes over time, so historical prices and sale counts are not fixtures.
 
