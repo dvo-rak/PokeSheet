@@ -1,7 +1,7 @@
 const CONFIG = {
   SHEET: 'Collection',
   TCGDEX_BASE: 'https://api.tcgdex.net/v2/en',
-  VERSION: '0.1.2',
+  VERSION: '0.1.3',
   PSA_REFRESH: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
 };
 
@@ -278,9 +278,22 @@ function addCardFromSidebar(data) {
     updateRawPriceForRow_(newRow, { card: tcgdexCard });
   }
 
+  // Commit the raw-price/Product-ID writes before reading column P again.
+  SpreadsheetApp.flush();
+
   // PriceCharting is best-effort. A failed lookup must never block adding a card.
   try {
-    updatePriceChartingLinkForRow_(newRow);
+    const effectiveProductId = String(sheet.getRange(newRow, 16).getDisplayValue() || '').trim();
+
+    if (effectiveProductId) {
+      updatePriceChartingLinkForRow_(newRow, {
+        name: String(sheet.getRange(newRow, 5).getDisplayValue() || '').trim(),
+        cardNumber: String(sheet.getRange(newRow, 2).getDisplayValue() || '').trim(),
+        productId: effectiveProductId
+      });
+    } else {
+      console.log('Row ' + newRow + ': PriceCharting skipped because TCGplayer ID is empty.');
+    }
   } catch (error) {
     console.log('Row ' + newRow + ': PriceCharting lookup failed: ' + error.message);
   }
@@ -666,7 +679,7 @@ function updatePriceChartingLinks() {
   );
 }
 
-function updatePriceChartingLinkForRow_(row) {
+function updatePriceChartingLinkForRow_(row, cardData) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Collection sheet was not found.');
   ensurePriceChartingColumn_();
@@ -675,12 +688,28 @@ function updatePriceChartingLinkForRow_(row) {
   const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
   if (existingLink) return existingLink;
 
-  const productId = String(sheet.getRange(row, 16).getValue() || '').trim();
-  const name = String(sheet.getRange(row, 5).getValue() || '').trim();
-  const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
+  cardData = cardData || {};
+
+  const productId = String(
+    cardData.productId || sheet.getRange(row, 16).getDisplayValue() || ''
+  ).trim();
+
+  const name = String(
+    cardData.name || sheet.getRange(row, 5).getDisplayValue() || ''
+  ).trim();
+
+  const cardNumber = String(
+    cardData.cardNumber || sheet.getRange(row, 2).getDisplayValue() || ''
+  ).trim();
+
   if (!productId || !name || !cardNumber) return null;
 
-  const result = findPriceChartingUrl_({ name, cardNumber, tcgplayerId: productId });
+  const result = findPriceChartingUrl_({
+    name,
+    cardNumber,
+    tcgplayerId: productId
+  });
+
   if (!result) return null;
 
   setPriceChartingLink_(linkCell, result.url);
