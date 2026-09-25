@@ -51,7 +51,7 @@ TCGplayer mappings:
 
 Raw $ is the TCGplayer comparison price parsed from the verified PriceCharting product page. PSA10/Raw uses PriceCharting-sourced USD values for both sides of the ratio.
 
-PriceCharting matching uses the TCGplayer Product ID in column P. PSA refreshes use the verified PriceCharting URL in column Q. Missing PSA 10 data or unrecognized markup is a valid no-update state, not a reason to erase previous values.
+PriceCharting matching uses the TCGplayer Product ID in column N. Pricing refreshes use the verified PriceCharting URL in column O. Missing PSA 10 data or unrecognized markup is a valid no-update state, not a reason to erase previous values.
 
 ## PSA refresh rules
 
@@ -134,7 +134,7 @@ Do not blindly rank cards by PSA/raw multiple. A high multiple with two sales an
 
 A future signal should consider absolute PSA 10 price, PSA/raw multiple, PSA 10 sales count, and market confidence.
 
-Column M, Grade Candidates, is a manual count of physical copies worth inspecting. It is not an automated grading score.
+Column L, Grade Candidates, is a manual count of physical copies worth inspecting. It is not an automated grading score.
 
 ## Regression references
 
