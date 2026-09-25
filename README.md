@@ -46,13 +46,10 @@ The sheet name must be `Collection`.
 
 ## Quick start
 
-1. Make a copy of the master tracker.
+1. [Make a copy of the master tracker.](https://docs.google.com/spreadsheets/d/1MzzMkVgVU4I-rDNRcX0lfRb3zWMuW_FvVD9bwZ8miZk/edit?usp=sharing)
 2. Reload it and authorize Apps Script when Google asks.
 3. Use **⚡ Pokémon → ➕ Add cards**.
 4. Use **Update prices** to refresh PriceCharting raw and PSA data.
-
-Master tracker:
-https://docs.google.com/spreadsheets/d/1MzzMkVgVU4I-rDNRcX0lfRb3zWMuW_FvVD9bwZ8miZk/edit?usp=sharing
 
 ## Pricing
 
@@ -62,7 +59,9 @@ PokeSheet extracts the TCGplayer comparison price into `Raw $`, the PSA 10 price
 
 New cards attempt PriceCharting matching immediately after the TCGplayer Product ID is known. Existing verified links are cached. **Update PriceCharting links** can backfill missing links.
 
-Price updates respect Refresh caching: HIGH = 3 days, LOW = 90 days, and AUTO = 90/30/14/7/3 days based on PSA 10 value (<$25 / $25–49 / $50–99 / $100–249 / $250+). OFF skips automatic refreshes. A card without an Updated timestamp is refreshed on its first run. Raw and PSA data are refreshed together from one page fetch.\n\nPrice updates are capped at 40 PriceCharting product-page fetches per run.
+Price updates respect Refresh caching: HIGH = 3 days, LOW = 90 days, and AUTO = 90/30/14/7/3 days based on PSA 10 value (<$25 / $25–49 / $50–99 / $100–249 / $250+). OFF skips automatic refreshes. A card without an Updated timestamp is refreshed on its first run. Raw and PSA data are refreshed together from one page fetch.
+
+Price updates are capped at 40 PriceCharting product-page fetches per run.
 
 ## Custom / unlisted printings
 
