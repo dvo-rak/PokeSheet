@@ -16,8 +16,6 @@ function onOpen() {
     .addItem('Update PriceCharting links', 'updatePriceChartingLinks')
     .addSeparator()
     .addItem('Update everything', 'updateEverything')
-    .addSeparator()
-    .addItem('🔑 Setup API key', 'setupApiKey')
     .addToUi();
 }
 
@@ -25,25 +23,6 @@ function updateEverything() {
   updateRawPrices();
   updatePSAPrices();
   updatePriceChartingLinks();
-}
-
-function setupApiKey() {
-  const ui = SpreadsheetApp.getUi();
-  const response = ui.prompt(
-    '🔑 Pokémon Price Tracker',
-    'Paste your Pokémon Price Tracker API key.\n\nThe key will be stored in this script project\'s Script Properties.',
-    ui.ButtonSet.OK_CANCEL
-  );
-  if (response.getSelectedButton() !== ui.Button.OK) return;
-
-  const apiKey = response.getResponseText().trim();
-  if (!apiKey) {
-    ui.alert('❌ API key is empty.');
-    return;
-  }
-
-  PropertiesService.getScriptProperties().setProperty('POKEMON_PRICE_API_KEY', apiKey);
-  ui.alert('✅ API key saved', 'Pokémon Price Tracker is configured.\n\nYou can now use Update PSA prices.', ui.ButtonSet.OK);
 }
 
 // TCGdex helpers
@@ -373,13 +352,13 @@ function updateRawPriceForRow_(row, options) {
     if (existingRawPrice !== '' && existingRawPrice !== null) {
       tcgCell.setNote(
         'Custom TCGplayer printing.\n' +
-        'Raw TCGplayer market price from Pokémon Price Tracker.\n' +
+        'Preserved raw TCGplayer price for this custom printing.\n' +
         'TCGplayer Product ID: ' + existingProductId
       );
     } else {
       tcgCell.setNote(
         'Custom TCGplayer printing.\n' +
-        'Raw TCG price will be populated during the next PSA update.\n' +
+        'No automatic raw TCG price is available from TCGdex for this printing.\n' +
         'TCGplayer Product ID: ' + existingProductId
       );
     }
