@@ -2,7 +2,7 @@ const CONFIG = {
   SHEET: 'Collection',
   TCGDEX_BASE: 'https://api.tcgdex.net/v2/en',
   VERSION: '0.2.1',
-  PSA_REFRESH: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
+  REFRESH_INTERVALS: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
 };
 
 function onOpen() {
@@ -305,21 +305,21 @@ function updatePrices() {
 
   for (let row = 2; row <= lastRow && lookups < MAX_LOOKUPS; row++) {
     try {
-      const oldPSA10 = Number(sheet.getRange(row, 8).getValue()) || 0;
-      let watchMode = String(sheet.getRange(row, 11).getValue() || '').trim().toUpperCase();
+      const referencePrice = Number(sheet.getRange(row, 8).getValue()) || 0;
+      let refreshMode = String(sheet.getRange(row, 11).getValue() || '').trim().toUpperCase();
       const lastUpdated = sheet.getRange(row, 13).getValue();
 
-      if (!watchMode) {
-        watchMode = 'AUTO';
+      if (!refreshMode) {
+        refreshMode = 'AUTO';
         sheet.getRange(row, 11).setValue('AUTO');
       }
 
-      if (watchMode === 'OFF') {
+      if (refreshMode === 'OFF') {
         off++;
         continue;
       }
 
-      if (!shouldRefreshPrice_(oldPSA10, lastUpdated, watchMode)) {
+      if (!shouldRefreshPrice_(referencePrice, lastUpdated, refreshMode)) {
         cached++;
         continue;
       }
@@ -353,20 +353,20 @@ function updatePrices() {
   );
 }
 
-function shouldRefreshPrice_(price, lastUpdated, watchMode) {
-  if (watchMode === 'OFF') return false;
+function shouldRefreshPrice_(price, lastUpdated, refreshMode) {
+  if (refreshMode === 'OFF') return false;
   if (!lastUpdated) return true;
 
   const ageDays = (Date.now() - new Date(lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
-  if (watchMode === 'HIGH') return ageDays >= 3;
-  if (watchMode === 'LOW') return ageDays >= 90;
+  if (refreshMode === 'HIGH') return ageDays >= 3;
+  if (refreshMode === 'LOW') return ageDays >= 90;
 
   let refreshDays;
-  if (!price || price < 25) refreshDays = CONFIG.PSA_REFRESH.CHEAP;
-  else if (price < 50) refreshDays = CONFIG.PSA_REFRESH.LOW;
-  else if (price < 100) refreshDays = CONFIG.PSA_REFRESH.MEDIUM;
-  else if (price < 250) refreshDays = CONFIG.PSA_REFRESH.HIGH;
-  else refreshDays = CONFIG.PSA_REFRESH.VERY_HIGH;
+  if (!price || price < 25) refreshDays = CONFIG.REFRESH_INTERVALS.CHEAP;
+  else if (price < 50) refreshDays = CONFIG.REFRESH_INTERVALS.LOW;
+  else if (price < 100) refreshDays = CONFIG.REFRESH_INTERVALS.MEDIUM;
+  else if (price < 250) refreshDays = CONFIG.REFRESH_INTERVALS.HIGH;
+  else refreshDays = CONFIG.REFRESH_INTERVALS.VERY_HIGH;
 
   return ageDays >= refreshDays;
 }
