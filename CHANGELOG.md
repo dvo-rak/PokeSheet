@@ -4,7 +4,7 @@
 
 ### Changed
 - Removed the redundant PSA Updated column; Raw and PSA pricing now share one Updated timestamp.
-- Update prices again respects the existing PSA Watch cache rules while refreshing Raw + PSA together from one PriceCharting fetch.
+- Update prices again respects the existing Refresh cache rules while refreshing Raw + PSA together from one PriceCharting fetch.
 - Existing 0.2.0 sheets migrate automatically and preserve the previous PSA Updated timestamp as the unified Updated value.
 
 
@@ -20,7 +20,7 @@
 - Replaced separate raw/PSA menu actions with Update prices.
 - New cards attempt verified PriceCharting matching and pricing immediately.
 - PSA10/Raw is displayed with two decimal places.
-- Fixed new-card entry so PSA Watch defaults to AUTO and preserves its dropdown validation.
+- Fixed new-card entry so Refresh defaults to AUTO and preserves its dropdown validation.
 - Added a Collection Summary outside the data table with Raw Total calculated as Qty × Raw $.
 
 ## 0.1.4 - 2026-09-25
