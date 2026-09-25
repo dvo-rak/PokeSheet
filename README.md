@@ -88,6 +88,8 @@ Raw prices come from TCGdex:
 
 PSA data comes from Pokémon Price Tracker and is intentionally updated separately so that adding bulk cards does not consume graded-price API credits.
 
+**API usage:** PSA / graded pricing uses Pokémon Price Tracker API credits and is subject to the provider's rate limits. PokeSheet limits PSA updates to **40 cards per run** to reduce quota usage. Raw pricing from TCGdex does not consume Pokémon Price Tracker API credits.
+
 PSA refresh behavior:
 
 | Mode / PSA 10 price | Refresh |
