@@ -28,6 +28,10 @@
     .selected-preview { display: flex; gap: 12px; margin-bottom: 8px; }
     .selected-preview img { width: 80px; max-height: 112px; object-fit: contain; }
     .loader { display: none; margin-top: 12px; font-size: 12px; color: #5f6368; }
+    .check-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; font-weight: 700; }
+    .check-row input { width: auto; margin: 0; }
+    .custom-box { display: none; margin-top: 8px; padding: 10px; border: 1px dashed #9aa0a6; border-radius: 8px; background: #fafafa; }
+    .hint { margin-top: 5px; font-size: 11px; color: #5f6368; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -69,6 +73,25 @@
     </div>
     <label>Variant</label>
     <select id="variantSelect"></select>
+
+    <label class="check-row">
+      <input id="customPrinting" type="checkbox" onchange="toggleCustomPrinting()">
+      Custom / unlisted printing
+    </label>
+
+    <div id="customBox" class="custom-box">
+      <label>Custom variant</label>
+      <select id="customVariant">
+        <option value="Normal">Normal</option>
+        <option value="Holo">Holo</option>
+        <option value="Reverse">Reverse</option>
+      </select>
+
+      <label>TCGplayer Product ID</label>
+      <input id="customProductId" type="text" inputmode="numeric" placeholder="637651">
+      <div class="hint">The Product ID is the number after /product/ in the TCGplayer URL.</div>
+    </div>
+
     <label>Qty</label>
     <input id="qty" type="number" min="1" step="1" value="1">
     <button id="addButton" class="primary" onclick="addSelectedCard()">➕ Add card</button>
@@ -246,25 +269,56 @@
     });
 
     document.getElementById('qty').value = 1;
+    resetCustomPrinting();
     document.getElementById('addStatus').textContent = '';
     document.getElementById('addStatus').className = 'status';
+  }
+
+  function resetCustomPrinting() {
+    const checkbox = document.getElementById('customPrinting');
+    const box = document.getElementById('customBox');
+    const variant = document.getElementById('variantSelect');
+    const productId = document.getElementById('customProductId');
+
+    checkbox.checked = false;
+    box.style.display = 'none';
+    variant.disabled = false;
+    productId.value = '';
+    document.getElementById('customVariant').value = 'Normal';
+  }
+
+  function toggleCustomPrinting() {
+    const enabled = document.getElementById('customPrinting').checked;
+    document.getElementById('customBox').style.display = enabled ? 'block' : 'none';
+    document.getElementById('variantSelect').disabled = enabled;
   }
 
   function clearSelectedCard() {
     selectedCard = null;
     document.getElementById('selectedBox').style.display = 'none';
+    resetCustomPrinting();
   }
 
   function addSelectedCard() {
     if (!selectedCard) return;
 
-    const variant = document.getElementById('variantSelect').value;
+    const customPrinting = document.getElementById('customPrinting').checked;
+    const variant = customPrinting
+      ? document.getElementById('customVariant').value
+      : document.getElementById('variantSelect').value;
+    const productId = document.getElementById('customProductId').value.trim();
     const qty = Number(document.getElementById('qty').value);
     const status = document.getElementById('addStatus');
     const button = document.getElementById('addButton');
 
     if (!Number.isInteger(qty) || qty < 1) {
       status.textContent = 'Quantity must be a whole number greater than 0.';
+      status.className = 'status error';
+      return;
+    }
+
+    if (customPrinting && !/^\d+$/.test(productId)) {
+      status.textContent = 'Enter a valid numeric TCGplayer Product ID.';
       status.className = 'status error';
       return;
     }
@@ -301,7 +355,9 @@
         name: selectedCard.name,
         rarity: selectedCard.rarity,
         variant: variant,
-        qty: qty
+        qty: qty,
+        customPrinting: customPrinting,
+        productId: customPrinting ? productId : ''
       });
   }
 
