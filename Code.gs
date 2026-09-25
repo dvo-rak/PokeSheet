@@ -305,7 +305,11 @@ function updatePrices() {
 
   for (let row = 2; row <= lastRow && lookups < MAX_LOOKUPS; row++) {
     try {
-      const referencePrice = Number(sheet.getRange(row, 8).getValue()) || 0;
+      const rawValue = sheet.getRange(row, 7).getValue();
+      const psaValue = sheet.getRange(row, 8).getValue();
+      const hasRawPrice = rawValue !== '' && Number.isFinite(Number(rawValue));
+      const hasPSA10Price = psaValue !== '' && Number.isFinite(Number(psaValue));
+      const referencePrice = hasPSA10Price ? Number(psaValue) : 0;
       let refreshMode = String(sheet.getRange(row, 11).getValue() || '').trim().toUpperCase();
       const lastUpdated = sheet.getRange(row, 13).getValue();
 
@@ -319,7 +323,9 @@ function updatePrices() {
         continue;
       }
 
-      if (!shouldRefreshPrice_(referencePrice, lastUpdated, refreshMode)) {
+      // Never let the cache preserve an incomplete pricing row.
+      const pricingComplete = hasRawPrice && hasPSA10Price;
+      if (pricingComplete && !shouldRefreshPrice_(referencePrice, lastUpdated, refreshMode)) {
         cached++;
         continue;
       }
