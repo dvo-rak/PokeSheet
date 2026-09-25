@@ -7,6 +7,8 @@
 - PSA 10 sold-listing count and sales volume are parsed from the same PriceCharting page.
 - PSA refresh remains controlled by AUTO, HIGH, LOW, and OFF modes.
 - PSA parsing fails closed: an unrecognized PriceCharting page does not erase previously stored PSA values.
+- Removed the obsolete setup menu from the current application flow.
+- Updated repository documentation for the TCGdex + PriceCharting data flow.
 
 ## 0.1.3 - 2026-09-25
 
