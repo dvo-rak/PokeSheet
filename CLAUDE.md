@@ -6,7 +6,7 @@ This file is the working context for Claude or another coding assistant maintain
 
 This is a small Google Sheets + Google Apps Script Pokémon TCG collection tracker. It is currently intended for a few friends using independent copies of a master spreadsheet.
 
-Optimize for fast physical-card entry, understandable code, low maintenance, and low API-credit usage. Do not turn it into a large framework without a concrete need.
+Optimize for fast physical-card entry, understandable code, low maintenance, and minimal external-service setup. Do not turn it into a large framework without a concrete need.
 
 ## Runtime and files
 
@@ -24,11 +24,9 @@ TCGdex base URL: https://api.tcgdex.net/v2/en
 
 TCGdex provides card search, details, sets, images, Cardmarket pricing, TCGplayer pricing, and TCGplayer product IDs for standard printings. Collector numbers are resolved defensively so leading zeroes such as 034 survive Google Sheets coercion.
 
-Pokémon Price Tracker provides graded sales and PSA 10 pricing. For custom / unlisted printings, the same PSA response also supplies the Raw TCG market price using the manually selected TCGplayer Product ID.
+PriceCharting provides verified product pages for PSA 10 price, sold-listing count, and sales volume. PokeSheet discovers candidate pages from PriceCharting search results and accepts a page only when its TCGplayer Product ID exactly matches column P. Existing links are cached. New-card entry flushes spreadsheet writes, re-reads the effective Product ID from column P, and then attempts PriceCharting matching.
 
-PriceCharting provides a human-review fallback link for graded market data. PokeSheet discovers candidate product pages from public search HTML and accepts a link only when the page's TCGplayer ID exactly matches column P. Existing links are cached to avoid unnecessary repeat requests. New-card entry flushes spreadsheet writes, re-reads the effective Product ID from column P, and then attempts the PriceCharting lookup.
-
-The Pokémon Price Tracker key must never be committed. It is stored in Apps Script Script Properties under POKEMON_PRICE_API_KEY.
+PSA updates read the verified PriceCharting URL from column Q and parse PSA 10 price, sold-listing count, and volume from the product page. The parser fails closed and must not erase a previous PSA value when expected markup is missing.
 
 ## Spreadsheet contract
 
@@ -71,7 +69,7 @@ TCGplayer mappings:
 
 Raw Cardmarket price is EUR. Raw TCGplayer price is USD. PSA10/Raw intentionally uses TCGplayer USD so the ratio does not mix currencies.
 
-PSA lookup uses the TCGplayer product ID in column P. Prefer smartMarketPrice.price, then medianPrice, then averagePrice. Missing PSA 10 data is a valid state, not an application error.
+PriceCharting matching uses the TCGplayer Product ID in column P. PSA refreshes use the verified PriceCharting URL in column Q. Missing PSA 10 data or unrecognized markup is a valid no-update state, not a reason to erase previous values.
 
 ## PSA refresh rules
 
@@ -107,15 +105,13 @@ A new card should:
 6. attempt a best-effort PriceCharting link lookup after the effective TCGplayer Product ID is known;
 7. NOT trigger a PSA lookup automatically.
 
-PSA is batch-updated to conserve API credits.
+PSA is batch-updated to avoid unnecessary PriceCharting page fetches.
 
-Custom / unlisted printings are an escape hatch for products that TCGdex does not expose as a separate printing. The sidebar accepts a manual numeric TCGplayer Product ID. Raw TCG pricing for those rows is filled from Pokémon Price Tracker during PSA updates; normal TCGdex raw refreshes must preserve both that price and the manual Product ID.
+Custom / unlisted printings are an escape hatch for products that TCGdex does not expose as a separate printing. The sidebar accepts a manual numeric TCGplayer Product ID. Normal TCGdex raw refreshes must preserve that Product ID and any existing custom Raw TCG value.
 
 ## Security
 
-Never commit, log, document, screenshot, or hard-code a real API key.
-
-The literal property name POKEMON_PRICE_API_KEY is safe to commit.
+Do not commit credentials or personal collection data. PokeSheet currently requires no external service credentials.
 
 ## Coding conventions
 
@@ -163,9 +159,8 @@ Column N, Grade Candidates, is a manual count of physical copies worth inspectin
 ## Regression references
 
 - TCGdex swsh3-136: Furret. Known during development to expose Normal and Reverse TCGplayer variants.
-- TCGplayer product ID 42360: Base Set Blastoise #2/102. Used during development to validate the PSA 10 parser.
-- TCGplayer product ID 637651: Ethan's Typhlosion 034/182 (Non-holo), Deck Exclusives. Used to validate custom printing identity, leading-zero collector numbers, custom raw TCG pricing, the valid no-PSA-10-sales state, and PriceCharting matching.
-- TCGplayer product ID 704802: Rampardos ex #045. Used to validate the direct-product PriceCharting search path.
+- TCGplayer product ID 637651: Ethan's Typhlosion 034/182 (Non-holo), Deck Exclusives. Used to validate custom printing identity, leading-zero collector numbers, PriceCharting matching, and PSA 10 parsing.
+- TCGplayer product ID 704802: Rampardos ex #045. Used to validate the direct-product PriceCharting search path and low-volume PSA 10 parsing.
 
 External market data changes over time, so historical prices and sale counts are not fixtures.
 
@@ -177,4 +172,4 @@ For every meaningful change:
 3. update CHANGELOG.md for user-visible changes;
 4. bump the version for a release;
 5. verify that no secrets are present;
-6. test random search, same-set lookup, new add, duplicate increment, variant separation, raw pricing, product ID, PSA with data, and PSA with no PSA 10 data.
+6. test random search, same-set lookup, new add, duplicate increment, variant separation, raw pricing, product ID, PriceCharting matching, PSA with data, and PSA with missing/unrecognized data.
