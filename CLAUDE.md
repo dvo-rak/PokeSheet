@@ -26,7 +26,7 @@ TCGdex provides card search, details, sets, images, Cardmarket pricing, TCGplaye
 
 Pokémon Price Tracker provides graded sales and PSA 10 pricing. For custom / unlisted printings, the same PSA response also supplies the Raw TCG market price using the manually selected TCGplayer Product ID.
 
-PriceCharting provides a human-review fallback link for graded market data. PokeSheet discovers candidate product pages from public search HTML and accepts a link only when the page's TCGplayer ID exactly matches column P. Existing links are cached to avoid unnecessary repeat requests.
+PriceCharting provides a human-review fallback link for graded market data. PokeSheet discovers candidate product pages from public search HTML and accepts a link only when the page's TCGplayer ID exactly matches column P. Existing links are cached to avoid unnecessary repeat requests. New-card entry flushes spreadsheet writes, re-reads the effective Product ID from column P, and then attempts the PriceCharting lookup.
 
 The Pokémon Price Tracker key must never be committed. It is stored in Apps Script Script Properties under POKEMON_PRICE_API_KEY.
 
