@@ -22,9 +22,9 @@ Optimize for fast physical-card entry, understandable code, low maintenance, and
 
 TCGdex base URL: https://api.tcgdex.net/v2/en
 
-TCGdex provides card search, details, sets, images, Cardmarket pricing, TCGplayer pricing, and TCGplayer product IDs for standard printings. Collector numbers are resolved defensively so leading zeroes such as 034 survive Google Sheets coercion.
+TCGdex is the card catalog. It provides card search, details, sets, images, variants, and TCGplayer product IDs. Collector numbers are resolved defensively so leading zeroes such as 034 survive Google Sheets coercion.
 
-PriceCharting provides verified product pages for PSA 10 price, sold-listing count, and sales volume. PokeSheet discovers candidate pages from PriceCharting search results and accepts a page only when its TCGplayer Product ID exactly matches column P. Existing links are cached. New-card entry flushes spreadsheet writes, re-reads the effective Product ID from column P, and then attempts PriceCharting matching.
+PriceCharting is the pricing source. Verified product pages provide the TCGplayer comparison raw price, PSA 10 price, sold-listing count, and sales volume. PokeSheet discovers candidate pages from PriceCharting search results and accepts a page only when its TCGplayer Product ID exactly matches column P. Existing links are cached. New-card entry flushes spreadsheet writes, re-reads the effective Product ID from column P, and then attempts PriceCharting matching.
 
 PSA updates read the verified PriceCharting URL from column Q and parse PSA 10 price, sold-listing count, and volume from the product page. The parser fails closed and must not erase a previous PSA value when expected markup is missing.
 
@@ -32,25 +32,7 @@ PSA updates read the verified PriceCharting URL from column Q and parse PSA 10 p
 
 The sheet name must be Collection.
 
-Columns are positional and are part of the application contract:
-
-A Set ID
-B Card #
-C Variant
-D Qty
-E Name
-F Rarity
-G Raw CM €
-H Raw TCG $
-I PSA 10 $
-J PSA10 Sales
-K PSA10/Raw
-L PSA Watch
-M PSA Updated
-N Grade Candidates
-O Updated
-P TCGplayer ID
-Q PriceCharting
+Columns are positional and are part of the application contract:\n\nA Set ID\nB Card #\nC Variant\nD Qty\nE Name\nF Rarity\nG Raw $\nH PSA 10 $\nI PSA10 Sales\nJ PSA10/Raw\nK PSA Watch\nL PSA Updated\nM Grade Candidates\nN Updated\nO TCGplayer ID\nP PriceCharting
 
 Do not reorder columns without migrating every positional read/write.
 
@@ -67,7 +49,7 @@ TCGplayer mappings:
 - Holo → holofoil
 - Reverse → reverse-holofoil
 
-Raw Cardmarket price is EUR. Raw TCGplayer price is USD. PSA10/Raw intentionally uses TCGplayer USD so the ratio does not mix currencies.
+Raw $ is the TCGplayer comparison price parsed from the verified PriceCharting product page. PSA10/Raw uses PriceCharting-sourced USD values for both sides of the ratio.
 
 PriceCharting matching uses the TCGplayer Product ID in column P. PSA refreshes use the verified PriceCharting URL in column Q. Missing PSA 10 data or unrecognized markup is a valid no-update state, not a reason to erase previous values.
 
@@ -98,16 +80,14 @@ Same set mode loads the set list dynamically from TCGdex. The user selects a set
 
 A new card should:
 1. write Set ID, card number, variant, and quantity;
-2. set PSA Watch to AUTO;
-3. preserve spreadsheet validation where possible;
-4. fetch raw pricing immediately;
-5. store the TCGplayer product ID;
-6. attempt a best-effort PriceCharting link lookup after the effective TCGplayer Product ID is known;
-7. NOT trigger a PSA lookup automatically.
+2. preserve spreadsheet validation where possible;
+3. resolve/store the TCGplayer product ID from TCGdex or the custom-printing input;
+4. attempt a best-effort verified PriceCharting link lookup;
+5. fetch the verified PriceCharting page and populate raw + PSA pricing when available.
 
-PSA is batch-updated to avoid unnecessary PriceCharting page fetches.
+Manual **Update prices** refreshes both raw and PSA pricing from the same PriceCharting page fetch.
 
-Custom / unlisted printings are an escape hatch for products that TCGdex does not expose as a separate printing. The sidebar accepts a manual numeric TCGplayer Product ID. Normal TCGdex raw refreshes must preserve that Product ID and any existing custom Raw TCG value.
+Custom / unlisted printings are an escape hatch for products that TCGdex does not expose as a separate printing. The sidebar accepts a manual numeric TCGplayer Product ID. TCGdex identity refreshes must preserve that Product ID. Pricing still comes from its verified PriceCharting page.
 
 ## Security
 
@@ -125,7 +105,7 @@ Do not commit credentials or personal collection data. PokeSheet currently requi
 ## Known trade-offs
 
 - Spreadsheet columns are hard-coded by index.
-- Full raw updates process rows sequentially.
+- Price updates process rows sequentially.
 - The TCGdex set list is loaded when the sidebar opens rather than cached.
 - PSA refresh priority follows sheet order.
 - Distribution currently uses independent copies of a Google Sheets template.
@@ -154,7 +134,7 @@ Do not blindly rank cards by PSA/raw multiple. A high multiple with two sales an
 
 A future signal should consider absolute PSA 10 price, PSA/raw multiple, PSA 10 sales count, and market confidence.
 
-Column N, Grade Candidates, is a manual count of physical copies worth inspecting. It is not an automated grading score.
+Column M, Grade Candidates, is a manual count of physical copies worth inspecting. It is not an automated grading score.
 
 ## Regression references
 
