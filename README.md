@@ -1,7 +1,6 @@
-# Pokémon TCG Collection Tracker
+# PokeSheet
 
-A lightweight Google Sheets + Apps Script tracker for Pokémon TCG collections.
-
+A lightweight Pokémon TCG collection and price tracker built with Google Sheets + Apps Script.
 ## Features
 
 - Sidebar card entry for random bulk and same-set sorting
