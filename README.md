@@ -1,25 +1,29 @@
 # PokeSheet
 
-A lightweight Pokémon TCG collection and price tracker built with Google Sheets + Apps Script.
+A lightweight Pokémon TCG collection and price tracker built with Google Sheets and Apps Script.
+
 ## Features
 
-- Sidebar card entry for random bulk and same-set sorting
-- Dynamic set list from TCGdex
-- Card image preview and Normal / Holo / Reverse variants
-- Custom / unlisted printing support using a TCGplayer Product ID
-- Duplicate detection by Set ID + Card # + Variant; custom printings also include TCGplayer Product ID
-- Automatic quantity increments for duplicates
-- Cardmarket EUR and TCGplayer USD raw prices
-- Automatic TCGplayer product ID storage
+- Fast card entry from a sidebar
+- TCGdex card search, sets, images, variants, raw prices, and TCGplayer Product IDs
+- Normal, Holo, Reverse, and custom/unlisted printing support
+- Duplicate detection and automatic quantity increments
+- Cardmarket EUR and TCGplayer USD raw prices for standard printings
 - Verified PriceCharting links matched by exact TCGplayer Product ID
-- Optional PSA 10 price and sales data through Pokémon Price Tracker
+- PSA 10 price, sold-listing count, and sales volume from PriceCharting
 - PSA 10 / raw multiplier
-- PSA refresh caching with AUTO, HIGH, LOW, and OFF modes
-- Per-user API key stored in Apps Script Script Properties
+- AUTO, HIGH, LOW, and OFF PSA refresh modes
+- No account configuration required
+
+## Data sources
+
+**TCGdex** supplies card search, metadata, images, Cardmarket raw pricing, TCGplayer raw pricing, and TCGplayer Product IDs for standard printings.
+
+**PriceCharting** supplies the verified product pages used for PSA 10 pricing, sold-listing count, and sales volume. PokeSheet verifies the TCGplayer Product ID on the matched product page before storing the link in column Q.
+
+PriceCharting data is read from its product pages. If its page structure changes, the parser may require maintenance.
 
 ## Sheet contract
-
-The spreadsheet must contain a sheet named Collection with these columns:
 
 | Column | Header |
 |---|---|
@@ -41,67 +45,60 @@ The spreadsheet must contain a sheet named Collection with these columns:
 | P | TCGplayer ID |
 | Q | PriceCharting |
 
-Variant values: Normal, Holo, Reverse.
+The sheet name must be `Collection`.
 
-PSA Watch values: AUTO, HIGH, LOW, OFF.
+Variants: `Normal`, `Holo`, `Reverse`.
+
+PSA Watch: `AUTO`, `HIGH`, `LOW`, `OFF`.
 
 ## Google Sheets template
 
-**[Make a copy of the master tracker](https://docs.google.com/spreadsheets/d/1MzzMkVgVU4I-rDNRcX0lfRb3zWMuW_FvVD9bwZ8miZk/edit?usp=sharing)**
+Open the master tracker:
+https://docs.google.com/spreadsheets/d/1MzzMkVgVU4I-rDNRcX0lfRb3zWMuW_FvVD9bwZ8miZk/edit?usp=sharing
 
-The master spreadsheet is intended to stay clean and contain no personal collection data or API keys. Make your own copy before using the tracker.
+Keep the master clean and make your own copy before adding collection data.
 
 ## Quick start
 
-1. Make a copy of the Google Sheets template above.
-2. Reload the spreadsheet and authorize the Apps Script when Google asks.
-3. Use ⚡ Pokémon → ➕ Add cards to start adding cards.
-4. For PSA 10 pricing, create your own API key at [Pokémon Price Tracker](https://www.pokemonpricetracker.com/).
-5. In the spreadsheet, use ⚡ Pokémon → 🔑 Setup API key and paste your key.
-
-Every user should use their own Pokémon Price Tracker API key. TCGdex raw pricing does not require this key.
-
-## Pokémon Price Tracker API key
-
-The API key is only required for PSA / graded-price updates. Get your own key from [Pokémon Price Tracker](https://www.pokemonpricetracker.com/), then save it through ⚡ Pokémon → 🔑 Setup API key.
-
-## API key security
-
-Never commit a real API key to this repository.
-
-The tracker stores the Pokémon Price Tracker key in Apps Script Script Properties under the property name POKEMON_PRICE_API_KEY.
+1. Make a copy of the master tracker.
+2. Reload it and authorize Apps Script when Google asks.
+3. Use **⚡ Pokémon → ➕ Add cards**.
+4. Use **Update raw prices** for raw market data.
+5. Use **Update PSA prices** for PriceCharting PSA 10 data.
 
 ## Card entry
 
 ### Random bulk
 
-Enter the card name and preferably the printed collector number, for example 136/189. The tracker searches TCGdex and shows matching cards with image and set information.
-
-The internal TCGdex set ID is stored automatically; the collector does not need to know it.
+Enter a card name and preferably its printed collector number. PokeSheet searches TCGdex and shows matching cards with image and set information.
 
 ### Same set
 
-Select a set once, then enter collector numbers. The set list is loaded dynamically from TCGdex when the sidebar opens.
+Select a set once and then enter collector numbers. The set list loads dynamically from TCGdex.
 
 ### Custom / unlisted printings
 
-Some products reuse the same artwork and collector number but have a separate TCGplayer product, such as deck-exclusive or other special printings that TCGdex does not expose separately.
+For a printing that TCGdex does not expose separately, enable **Custom / unlisted printing**, choose the physical variant, and enter its numeric TCGplayer Product ID.
 
-Enable **Custom / unlisted printing**, choose the physical variant, and enter the numeric TCGplayer Product ID from the product URL. PokeSheet preserves that Product ID as the printing identity. The custom Raw TCG price is populated from Pokémon Price Tracker during the next PSA update and is preserved by normal TCGdex raw-price refreshes.
+The Product ID becomes part of that printing's identity and is also used to verify the matching PriceCharting page.
+
+TCGdex may not expose a raw TCGplayer price for a custom printing. PokeSheet preserves an existing Raw TCG value instead of overwriting it during normal raw-price refreshes.
 
 ## Pricing
 
-Raw prices come from TCGdex:
+Standard raw prices come from TCGdex:
 - Cardmarket in EUR
 - TCGplayer in USD
 
-PSA data comes from Pokémon Price Tracker and is intentionally updated separately so that adding bulk cards does not consume graded-price API credits.
+PSA 10 data comes from the verified PriceCharting page in column Q. PokeSheet extracts the PSA 10 price, sold-listing count, and sales volume. Column K is calculated from PSA 10 price divided by Raw TCG price.
 
-PriceCharting is used as a human-review fallback for graded market data. PokeSheet searches for a candidate product, verifies the product page's TCGplayer ID against column P, and only then writes a clickable `↗ PriceCharting` link to column Q. Newly added cards automatically attempt the PriceCharting lookup after their TCGplayer Product ID is written. Existing verified links are cached and are not fetched again during normal updates. Use **⚡ Pokémon → Update PriceCharting links** to backfill or retry missing links.
+If the expected PSA markup cannot be identified safely, PokeSheet keeps the previous PSA value instead of clearing it.
 
-**API usage:** PSA / graded pricing uses Pokémon Price Tracker API credits and is subject to the provider's rate limits. PokeSheet limits PSA updates to **40 cards per run** to reduce quota usage. Standard raw pricing from TCGdex does not consume Pokémon Price Tracker API credits. Custom / unlisted printings reuse the Pokémon Price Tracker PSA response to populate their Raw TCG market price without an additional request.
+New cards automatically attempt PriceCharting matching after their TCGplayer Product ID is known. Existing verified links are cached. **Update PriceCharting links** can backfill or retry missing links.
 
-PSA refresh behavior:
+PSA updates are capped at 40 PriceCharting page fetches per run.
+
+## PSA refresh behavior
 
 | Mode / PSA 10 price | Refresh |
 |---|---:|
@@ -114,18 +111,18 @@ PSA refresh behavior:
 | AUTO >= $250 | 3 days |
 | OFF | Never |
 
-Cards that have never been checked are eligible for their initial PSA lookup regardless of raw price.
+A card with no previous PSA update is eligible for its first lookup.
 
 ## Version
 
-Current source version: 0.1.3
+Current source version: **0.1.4**
 
-See CHANGELOG.md for release notes and CLAUDE.md for architecture and maintenance context.
+See `CHANGELOG.md` for release notes and `CLAUDE.md` for architecture and maintenance context.
 
 ## License
 
-MIT License. See LICENSE.
+MIT License. See `LICENSE`.
 
 ## Disclaimer
 
-This project is not affiliated with The Pokémon Company, TCGdex, TCGplayer, Cardmarket, PSA, or Pokémon Price Tracker.
+PokeSheet is not affiliated with The Pokémon Company, TCGdex, TCGplayer, Cardmarket, PSA, or PriceCharting. Market data can be incomplete, delayed, estimated, or reclassified by its source.
