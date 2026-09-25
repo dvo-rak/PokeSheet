@@ -7,6 +7,8 @@ const CONFIG = {
 
 function onOpen() {
   ensureV020Schema_();
+  applySheetFormatting_();
+  ensureCollectionSummary_();
 
   SpreadsheetApp.getUi().createMenu('⚡ Pokémon')
     .addItem('➕ Add cards', 'showCardSidebar')
@@ -21,6 +23,8 @@ function onOpen() {
 function updateEverything() {
   updatePrices();
   updatePriceChartingLinks();
+  applySheetFormatting_();
+  ensureCollectionSummary_();
 }
 
 // TCGdex helpers
@@ -428,6 +432,30 @@ function ensureV020Schema_() {
     'TCGplayer ID', 'PriceCharting'
   ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+}
+
+// Sheet presentation
+
+function applySheetFormatting_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+
+  // Keep the underlying ratio precise; only round its display.
+  sheet.getRange('J2:J').setNumberFormat('0.00x');
+  sheet.getRange('G2:H').setNumberFormat('$0.00');
+}
+
+function ensureCollectionSummary_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+
+  // Keep the summary outside the application contract (A:P).
+  sheet.getRange('R1').setValue('Collection Summary');
+  sheet.getRange('R2').setValue('Raw Total');
+  sheet.getRange('S2').setFormula('=SUMPRODUCT(D2:D,G2:G)');
+  sheet.getRange('S2').setNumberFormat('$0.00');
+  sheet.getRange('R1:S1').setFontWeight('bold');
+  sheet.getRange('R2').setFontWeight('bold');
 }
 
 // PriceCharting links
