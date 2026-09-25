@@ -6,7 +6,8 @@ A lightweight Pokémon TCG collection and price tracker built with Google Sheets
 - Sidebar card entry for random bulk and same-set sorting
 - Dynamic set list from TCGdex
 - Card image preview and Normal / Holo / Reverse variants
-- Duplicate detection by Set ID + Card # + Variant
+- Custom / unlisted printing support using a TCGplayer Product ID
+- Duplicate detection by Set ID + Card # + Variant; custom printings also include TCGplayer Product ID
 - Automatic quantity increments for duplicates
 - Cardmarket EUR and TCGplayer USD raw prices
 - Automatic TCGplayer product ID storage
@@ -80,6 +81,12 @@ The internal TCGdex set ID is stored automatically; the collector does not need 
 
 Select a set once, then enter collector numbers. The set list is loaded dynamically from TCGdex when the sidebar opens.
 
+### Custom / unlisted printings
+
+Some products reuse the same artwork and collector number but have a separate TCGplayer product, such as deck-exclusive or other special printings that TCGdex does not expose separately.
+
+Enable **Custom / unlisted printing**, choose the physical variant, and enter the numeric TCGplayer Product ID from the product URL. PokeSheet preserves that Product ID as the printing identity. The custom Raw TCG price is populated from Pokémon Price Tracker during the next PSA update and is preserved by normal TCGdex raw-price refreshes.
+
 ## Pricing
 
 Raw prices come from TCGdex:
@@ -88,7 +95,7 @@ Raw prices come from TCGdex:
 
 PSA data comes from Pokémon Price Tracker and is intentionally updated separately so that adding bulk cards does not consume graded-price API credits.
 
-**API usage:** PSA / graded pricing uses Pokémon Price Tracker API credits and is subject to the provider's rate limits. PokeSheet limits PSA updates to **40 cards per run** to reduce quota usage. Raw pricing from TCGdex does not consume Pokémon Price Tracker API credits.
+**API usage:** PSA / graded pricing uses Pokémon Price Tracker API credits and is subject to the provider's rate limits. PokeSheet limits PSA updates to **40 cards per run** to reduce quota usage. Standard raw pricing from TCGdex does not consume Pokémon Price Tracker API credits. Custom / unlisted printings reuse the Pokémon Price Tracker PSA response to populate their Raw TCG market price without an additional request.
 
 PSA refresh behavior:
 
@@ -107,7 +114,7 @@ Cards that have never been checked are eligible for their initial PSA lookup reg
 
 ## Version
 
-Current source version: 0.1.0
+Current source version: 0.1.1
 
 See CHANGELOG.md for release notes and CLAUDE.md for architecture and maintenance context.
 
