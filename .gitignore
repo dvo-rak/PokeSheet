@@ -1,0 +1,18 @@
+# Local editor / OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local secrets and environment files
+.env
+.env.*
+*.key
+*.pem
+
+# clasp local credentials
+.clasprc.json
+
+# Temporary files
+*.tmp
+*.log
