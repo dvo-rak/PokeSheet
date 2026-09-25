@@ -1,18 +1,17 @@
 const CONFIG = {
   SHEET: 'Collection',
   TCGDEX_BASE: 'https://api.tcgdex.net/v2/en',
-  VERSION: '0.1.4',
+  VERSION: '0.2.0',
   PSA_REFRESH: { CHEAP: 90, LOW: 30, MEDIUM: 14, HIGH: 7, VERY_HIGH: 3 }
 };
 
 function onOpen() {
-  ensurePriceChartingColumn_();
+  ensureV020Schema_();
 
   SpreadsheetApp.getUi().createMenu('⚡ Pokémon')
     .addItem('➕ Add cards', 'showCardSidebar')
     .addSeparator()
-    .addItem('Update raw prices', 'updateRawPrices')
-    .addItem('Update PSA prices', 'updatePSAPrices')
+    .addItem('Update prices', 'updatePrices')
     .addItem('Update PriceCharting links', 'updatePriceChartingLinks')
     .addSeparator()
     .addItem('Update everything', 'updateEverything')
@@ -20,8 +19,7 @@ function onOpen() {
 }
 
 function updateEverything() {
-  updateRawPrices();
-  updatePSAPrices();
+  updatePrices();
   updatePriceChartingLinks();
 }
 
@@ -188,6 +186,7 @@ function findCardInSetForSidebar(setId, collectorNumber) {
 function addCardFromSidebar(data) {
   if (!data) throw new Error('Card data is missing.');
 
+  ensureV020Schema_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Collection sheet was not found.');
 
@@ -205,12 +204,12 @@ function addCardFromSidebar(data) {
     throw new Error('Custom printing requires a valid numeric TCGplayer Product ID.');
   }
 
-  const tcgdexCard = getTcgdexCard_(setId, requestedCardNumber);
-  const cardNumber = String(tcgdexCard.localId || requestedCardNumber);
+  const card = getTcgdexCard_(setId, requestedCardNumber);
+  const cardNumber = String(card.localId || requestedCardNumber);
   const lastRow = sheet.getLastRow();
 
   if (lastRow >= 2) {
-    const values = sheet.getRange(2, 1, lastRow - 1, 16).getValues();
+    const values = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
     for (let index = 0; index < values.length; index++) {
       const row = index + 2;
       const sameCard =
@@ -219,62 +218,44 @@ function addCardFromSidebar(data) {
         String(values[index][2] || '').trim().toLowerCase() === variant.toLowerCase();
 
       if (!sameCard) continue;
-      if (customPrinting && String(values[index][15] || '').trim() !== customProductId) continue;
+      if (customPrinting && String(values[index][14] || '').trim() !== customProductId) continue;
 
       const oldQty = Number(values[index][3]) || 0;
       const newQty = oldQty + qty;
       sheet.getRange(row, 4).setValue(newQty);
-      return {
-        status: 'updated',
-        row,
-        oldQty,
-        newQty,
-        name: sheet.getRange(row, 5).getValue() || data.name || setId + '-' + cardNumber
-      };
+      return { status: 'updated', row, oldQty, newQty, name: sheet.getRange(row, 5).getValue() || data.name || setId + '-' + cardNumber };
     }
   }
 
   const newRow = Math.max(sheet.getLastRow() + 1, 2);
   sheet.getRange(newRow, 1).setValue(setId);
-  const numberCell = sheet.getRange(newRow, 2);
-  numberCell.setNumberFormat('@');
-  numberCell.setValue(cardNumber);
+  sheet.getRange(newRow, 2).setNumberFormat('@').setValue(cardNumber);
   sheet.getRange(newRow, 3).setValue(variant);
   sheet.getRange(newRow, 4).setValue(qty);
-  sheet.getRange(newRow, 5).setValue(tcgdexCard.name || data.name || '');
-  sheet.getRange(newRow, 6).setValue(tcgdexCard.rarity || data.rarity || '');
-  sheet.getRange(newRow, 12).setValue('AUTO');
+  sheet.getRange(newRow, 5).setValue(card.name || data.name || '');
+  sheet.getRange(newRow, 6).setValue(card.rarity || data.rarity || '');
 
   const variantValidation = sheet.getRange(2, 3).getDataValidation();
   if (variantValidation) sheet.getRange(newRow, 3).setDataValidation(variantValidation);
-  const watchValidation = sheet.getRange(2, 12).getDataValidation();
-  if (watchValidation) sheet.getRange(newRow, 12).setDataValidation(watchValidation);
 
-  if (customPrinting) {
-    sheet.getRange(newRow, 16).setValue(customProductId);
-    updateRawPriceForRow_(newRow, { preserveProductId: true, card: tcgdexCard });
-  } else {
-    updateRawPriceForRow_(newRow, { card: tcgdexCard });
+  let productId = customProductId;
+  if (!customPrinting) {
+    productId = getProductIdForVariant_(card, variant);
   }
+  sheet.getRange(newRow, 15).setValue(productId);
+  sheet.getRange(newRow, 14).setValue(new Date());
 
-  // Commit the raw-price/Product-ID writes before reading column P again.
   SpreadsheetApp.flush();
 
-  // PriceCharting is best-effort. A failed lookup must never block adding a card.
   try {
-    const effectiveProductId = String(sheet.getRange(newRow, 16).getDisplayValue() || '').trim();
-
-    if (effectiveProductId) {
-      updatePriceChartingLinkForRow_(newRow, {
-        name: String(sheet.getRange(newRow, 5).getDisplayValue() || '').trim(),
-        cardNumber: String(sheet.getRange(newRow, 2).getDisplayValue() || '').trim(),
-        productId: effectiveProductId
-      });
-    } else {
-      console.log('Row ' + newRow + ': PriceCharting skipped because TCGplayer ID is empty.');
-    }
+    const url = updatePriceChartingLinkForRow_(newRow, {
+      name: card.name || data.name || '',
+      cardNumber,
+      productId
+    });
+    if (url) updatePriceChartingPricesForRow_(newRow, url);
   } catch (error) {
-    console.log('Row ' + newRow + ': PriceCharting lookup failed: ' + error.message);
+    console.log('Row ' + newRow + ': PriceCharting pricing failed: ' + error.message);
   }
 
   return {
@@ -282,288 +263,148 @@ function addCardFromSidebar(data) {
     row: newRow,
     qty,
     name: sheet.getRange(newRow, 5).getValue(),
-    rawCM: sheet.getRange(newRow, 7).getValue(),
-    rawTCG: sheet.getRange(newRow, 8).getValue(),
-    productId: sheet.getRange(newRow, 16).getValue(),
+    rawTCG: sheet.getRange(newRow, 7).getValue(),
+    productId: sheet.getRange(newRow, 15).getValue(),
     customPrinting
   };
 }
 
-// Raw pricing
+function getProductIdForVariant_(card, variant) {
+  const tcg = card.pricing?.tcgplayer || {};
+  let item = null;
+  if (variant === 'Normal') item = tcg.normal;
+  else if (variant === 'Holo') item = tcg.holofoil;
+  else if (variant === 'Reverse') item = tcg['reverse-holofoil'];
+  if (item?.productId) return String(item.productId);
 
-function updateRawPrices() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
-  if (!sheet) throw new Error('Collection sheet was not found.');
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-
-  for (let row = 2; row <= lastRow; row++) {
-    const setId = String(sheet.getRange(row, 1).getValue()).trim();
-    const cardNumber = String(sheet.getRange(row, 2).getDisplayValue()).trim();
-    if (!setId || !cardNumber) continue;
-
-    try {
-      updateRawPriceForRow_(row);
-    } catch (error) {
-      sheet.getRange(row, 5).setValue('⚠️ ' + error.message);
-    }
+  for (const candidate of [tcg.normal, tcg.holofoil, tcg['reverse-holofoil']]) {
+    if (candidate?.productId) return String(candidate.productId);
   }
+  return '';
 }
 
-function updateRawPriceForRow_(row, options) {
-  options = options || {};
+// PriceCharting pricing
+
+function updatePrices() {
+  ensureV020Schema_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Collection sheet was not found.');
-
-  const setId = String(sheet.getRange(row, 1).getValue()).trim();
-  const numberCell = sheet.getRange(row, 2);
-  const storedCardNumber = String(numberCell.getDisplayValue()).trim();
-  const variant = String(sheet.getRange(row, 3).getValue()).trim();
-  if (!setId || !storedCardNumber) return;
-
-  const existingProductId = String(sheet.getRange(row, 16).getValue() || '').trim();
-  const card = options.card || getTcgdexCard_(setId, storedCardNumber);
-  const exactLocalId = String(card.localId || storedCardNumber);
-
-  if (exactLocalId !== storedCardNumber) {
-    numberCell.setNumberFormat('@');
-    numberCell.setValue(exactLocalId);
-  }
-
-  sheet.getRange(row, 5).setValue(card.name || '');
-  sheet.getRange(row, 6).setValue(card.rarity || '');
-
-  const pricing = card.pricing || {};
-  const cm = pricing.cardmarket || {};
-  const tcg = pricing.tcgplayer || {};
-  let tcgVariant = null;
-  if (variant === 'Normal') tcgVariant = tcg.normal ?? null;
-  else if (variant === 'Holo') tcgVariant = tcg.holofoil ?? null;
-  else if (variant === 'Reverse') tcgVariant = tcg['reverse-holofoil'] ?? null;
-
-  const customPrinting = options.preserveProductId === true || isCustomPrinting_(card, existingProductId);
-
-  if (customPrinting) {
-    sheet.getRange(row, 7).clearContent();
-    const tcgCell = sheet.getRange(row, 8);
-    const existingRawPrice = tcgCell.getValue();
-
-    if (existingRawPrice !== '' && existingRawPrice !== null) {
-      tcgCell.setNote(
-        'Custom TCGplayer printing.\n' +
-        'Preserved raw TCGplayer price for this custom printing.\n' +
-        'TCGplayer Product ID: ' + existingProductId
-      );
-    } else {
-      tcgCell.setNote(
-        'Custom TCGplayer printing.\n' +
-        'No automatic raw TCG price is available from TCGdex for this printing.\n' +
-        'TCGplayer Product ID: ' + existingProductId
-      );
-    }
-
-    sheet.getRange(row, 16).setValue(existingProductId);
-    sheet.getRange(row, 15).setValue(new Date());
-    return;
-  }
-
-  let cmPrice = '';
-  if (variant === 'Normal') {
-    cmPrice = cm.trend ?? cm.avg30 ?? cm.avg7 ?? cm.avg ?? '';
-  } else if (variant === 'Holo' || variant === 'Reverse') {
-    cmPrice = cm['trend-holo'] ?? cm['avg30-holo'] ?? cm['avg7-holo'] ?? cm.trend ?? cm.avg30 ?? '';
-  } else {
-    cmPrice = cm.trend ?? cm.avg30 ?? '';
-  }
-  sheet.getRange(row, 7).setValue(cmPrice);
-
-  let tcgPrice = '';
-  let productId = '';
-  if (tcgVariant) {
-    tcgPrice = tcgVariant.marketPrice ?? tcgVariant.midPrice ?? tcgVariant.lowPrice ?? '';
-    productId = tcgVariant.productId ?? '';
-  }
-
-  if (!productId) {
-    for (const candidate of [tcg.normal, tcg.holofoil, tcg['reverse-holofoil']]) {
-      if (candidate?.productId) {
-        productId = candidate.productId;
-        break;
-      }
-    }
-  }
-
-  const tcgCell = sheet.getRange(row, 8);
-  tcgCell.setValue(tcgPrice);
-  sheet.getRange(row, 16).setValue(productId);
-
-  if (Object.keys(tcg).length > 0 && !tcgVariant) {
-    const available = [];
-    if (tcg.normal) available.push('Normal');
-    if (tcg.holofoil) available.push('Holo');
-    if (tcg['reverse-holofoil']) available.push('Reverse');
-    tcgCell.setNote(
-      '⚠️ Variant "' + variant + '" was not found.\nAvailable variants: ' +
-      (available.join(', ') || 'unknown')
-    );
-  } else {
-    tcgCell.clearNote();
-  }
-
-  sheet.getRange(row, 15).setValue(new Date());
-}
-
-// PSA pricing
-
-function shouldRefreshPSA(price, lastUpdated, watchMode) {
-  if (watchMode === 'OFF') return false;
-
-  // Always perform the first PSA lookup for a card.
-  if (!lastUpdated) return true;
-
-  const ageDays = (Date.now() - new Date(lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
-  if (watchMode === 'HIGH') return ageDays >= 3;
-  if (watchMode === 'LOW') return ageDays >= 90;
-
-  let refreshDays;
-  if (!price || price < 25) refreshDays = CONFIG.PSA_REFRESH.CHEAP;
-  else if (price < 50) refreshDays = CONFIG.PSA_REFRESH.LOW;
-  else if (price < 100) refreshDays = CONFIG.PSA_REFRESH.MEDIUM;
-  else if (price < 250) refreshDays = CONFIG.PSA_REFRESH.HIGH;
-  else refreshDays = CONFIG.PSA_REFRESH.VERY_HIGH;
-
-  return ageDays >= refreshDays;
-}
-
-function updatePSAPrices() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
-  if (!sheet) throw new Error('Collection sheet was not found.');
-
-  ensurePriceChartingColumn_();
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
 
   const MAX_LOOKUPS = 40;
-  let lookupsUsed = 0;
-  let updated = 0;
-  let missingLink = 0;
-  let noPrice = 0;
-  let errors = 0;
+  let lookups = 0, updated = 0, missing = 0, errors = 0;
 
-  for (let row = 2; row <= lastRow; row++) {
-    if (lookupsUsed >= MAX_LOOKUPS) break;
-
-    const oldPSA10 = Number(sheet.getRange(row, 9).getValue()) || 0;
-    let watchMode = String(sheet.getRange(row, 12).getValue()).trim().toUpperCase();
-    const psaUpdated = sheet.getRange(row, 13).getValue();
-
-    if (!watchMode) {
-      watchMode = 'AUTO';
-      sheet.getRange(row, 12).setValue('AUTO');
-    }
-    if (!shouldRefreshPSA(oldPSA10, psaUpdated, watchMode)) continue;
-
+  for (let row = 2; row <= lastRow && lookups < MAX_LOOKUPS; row++) {
     try {
-      let priceChartingUrl = sheet.getRange(row, 17).getRichTextValue()?.getLinkUrl() || '';
+      refreshCardIdentity_(row);
 
-      // Backfill a missing verified PriceCharting link before giving up.
-      if (!priceChartingUrl) {
-        priceChartingUrl = updatePriceChartingLinkForRow_(row) || '';
-      }
-
-      if (!priceChartingUrl) {
-        missingLink++;
-        console.log('Row ' + row + ': missing verified PriceCharting link');
+      let url = sheet.getRange(row, 16).getRichTextValue()?.getLinkUrl() || '';
+      if (!url) url = updatePriceChartingLinkForRow_(row) || '';
+      if (!url) {
+        missing++;
         continue;
       }
 
-      const response = fetchPriceChartingPage_(priceChartingUrl);
-      lookupsUsed++;
-
-      const status = response.getResponseCode();
-      if (status !== 200) {
-        errors++;
-        console.log('Row ' + row + ': PriceCharting HTTP ' + status);
-        continue;
-      }
-
-      const data = extractPriceChartingPSA10_(response.getContentText());
-
-      // Fail closed: never erase a previous PSA value if PriceCharting markup
-      // changes or the PSA 10 price cannot be identified safely.
-      if (data.price === null) {
-        noPrice++;
-        console.log('Row ' + row + ': PriceCharting PSA 10 price not found');
-        continue;
-      }
-
-      const rawTCG = Number(sheet.getRange(row, 8).getValue()) || 0;
-
-      sheet.getRange(row, 9).setValue(data.price);
-      sheet.getRange(row, 10).setValue(data.sales);
-
-      if (rawTCG > 0) {
-        sheet.getRange(row, 11).setValue(data.price / rawTCG);
-      } else {
-        sheet.getRange(row, 11).clearContent();
-      }
-
-      const note = [
-        'PSA 10 — PriceCharting',
-        'Price: $' + data.price.toFixed(2),
-        'Sold listings: ' + data.sales,
-        'Volume: ' + (data.volume || 'unknown'),
-        'Source: verified PriceCharting product page'
-      ].join('\n');
-
-      sheet.getRange(row, 9).setNote(note);
-      sheet.getRange(row, 13).setValue(new Date());
+      updatePriceChartingPricesForRow_(row, url);
+      lookups++;
       updated++;
-
       Utilities.sleep(300);
     } catch (error) {
       errors++;
-      console.log('Row ' + row + ': PSA ERROR: ' + error.message);
+      console.log('Row ' + row + ': price update ERROR: ' + error.message);
     }
   }
 
-  console.log(
-    'PSA update finished. Updated: ' + updated +
-    ', lookups: ' + lookupsUsed + '/' + MAX_LOOKUPS +
-    ', missing PriceCharting link: ' + missingLink +
-    ', PSA price not found: ' + noPrice +
-    ', errors: ' + errors
-  );
+  console.log('Price update finished. Updated: ' + updated + ', fetches: ' + lookups + '/' + MAX_LOOKUPS + ', missing: ' + missing + ', errors: ' + errors);
+}
+
+function refreshCardIdentity_(row) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  const setId = String(sheet.getRange(row, 1).getValue() || '').trim();
+  const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
+  const variant = String(sheet.getRange(row, 3).getValue() || '').trim();
+  if (!setId || !cardNumber) return;
+
+  const existingProductId = String(sheet.getRange(row, 15).getDisplayValue() || '').trim();
+  const card = getTcgdexCard_(setId, cardNumber);
+  const exactLocalId = String(card.localId || cardNumber);
+
+  if (exactLocalId !== cardNumber) sheet.getRange(row, 2).setNumberFormat('@').setValue(exactLocalId);
+  sheet.getRange(row, 5).setValue(card.name || '');
+  sheet.getRange(row, 6).setValue(card.rarity || '');
+
+  if (!isCustomPrinting_(card, existingProductId)) {
+    sheet.getRange(row, 15).setValue(getProductIdForVariant_(card, variant));
+  }
+  sheet.getRange(row, 14).setValue(new Date());
+}
+
+function updatePriceChartingPricesForRow_(row, url) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  const response = fetchPriceChartingPage_(url);
+  if (response.getResponseCode() !== 200) throw new Error('PriceCharting HTTP ' + response.getResponseCode());
+
+  const data = extractPriceChartingPrices_(response.getContentText());
+  if (data.raw === null && data.psa10 === null) throw new Error('PriceCharting price structure was not recognized.');
+
+  if (data.raw !== null) {
+    sheet.getRange(row, 7).setValue(data.raw);
+    sheet.getRange(row, 7).setNote(
+      'TCGplayer comparison price from PriceCharting.\n' +
+      'Last checked by PriceCharting: ' + (data.rawChecked || 'unknown')
+    );
+  }
+
+  if (data.psa10 !== null) {
+    sheet.getRange(row, 8).setValue(data.psa10);
+    sheet.getRange(row, 9).setValue(data.sales);
+    sheet.getRange(row, 8).setNote([
+      'PSA 10 — PriceCharting',
+      'Price: $' + data.psa10.toFixed(2),
+      'Sold listings: ' + data.sales,
+      'Volume: ' + (data.volume || 'unknown')
+    ].join('\n'));
+
+    if (data.raw !== null && data.raw > 0) sheet.getRange(row, 10).setValue(data.psa10 / data.raw);
+    else sheet.getRange(row, 10).clearContent();
+
+    sheet.getRange(row, 12).setValue(new Date());
+  }
+}
+
+function extractPriceChartingPrices_(html) {
+  if (!html) return { raw: null, rawChecked: null, psa10: null, sales: 0, volume: null };
+
+  const rawRow = html.match(/<tr[^>]*data-source-name=["']TCGPlayer["'][^>]*>[\s\S]*?<\/tr>/i);
+  let raw = null;
+  let rawChecked = null;
+
+  if (rawRow) {
+    const priceMatch = rawRow[0].match(/<span[^>]*class=["'][^"']*\bjs-price\b[^"']*["'][^>]*>\s*\$([\d,.]+)\s*<\/span>/i);
+    const checkedMatch = rawRow[0].match(/title=["']Last checked:\s*([^"']+)["']/i);
+    if (priceMatch) {
+      const value = Number(priceMatch[1].replace(/,/g, ''));
+      if (Number.isFinite(value)) raw = value;
+    }
+    if (checkedMatch) rawChecked = decodeHtmlEntities_(checkedMatch[1]).trim();
+  }
+
+  const psa = extractPriceChartingPSA10_(html);
+  return { raw, rawChecked, psa10: psa.price, sales: psa.sales, volume: psa.volume };
 }
 
 function extractPriceChartingPSA10_(html) {
   if (!html) return { price: null, sales: 0, volume: null };
 
-  const priceMatch = html.match(
-    /<td[^>]*id=["']manual_only_price["'][^>]*>[\s\S]*?<span[^>]*class=["'][^"']*\bprice\b[^"']*["'][^>]*>\s*\$([\d,.]+)\s*<\/span>/i
-  );
+  const priceMatch = html.match(/<td[^>]*id=["']manual_only_price["'][^>]*>[\s\S]*?<span[^>]*class=["'][^"']*\bprice\b[^"']*["'][^>]*>\s*\$([\d,.]+)\s*<\/span>/i);
+  const salesMatch = html.match(/<option[^>]*value=["']completed-auctions-manual-only["'][^>]*>\s*PSA\s*10\s*\(([\d,]+)\)\s*<\/option>/i);
+  const volumeMatch = html.match(/<td[^>]*data-show-tab=["']completed-auctions-manual-only["'][^>]*>[\s\S]*?<a[^>]*>\s*([^<]+?)\s*<\/a>/i);
 
-  const salesMatch = html.match(
-    /<option[^>]*value=["']completed-auctions-manual-only["'][^>]*>\s*PSA\s*10\s*\(([\d,]+)\)\s*<\/option>/i
-  );
-
-  const volumeMatch = html.match(
-    /<td[^>]*data-show-tab=["']completed-auctions-manual-only["'][^>]*>[\s\S]*?<a[^>]*>\s*([^<]+?)\s*<\/a>/i
-  );
-
-  const price = priceMatch
-    ? Number(priceMatch[1].replace(/,/g, ''))
-    : null;
-
-  const sales = salesMatch
-    ? Number(salesMatch[1].replace(/,/g, ''))
-    : 0;
-
-  const volume = volumeMatch
-    ? decodeHtmlEntities_(volumeMatch[1]).replace(/\s+/g, ' ').trim()
-    : null;
+  const price = priceMatch ? Number(priceMatch[1].replace(/,/g, '')) : null;
+  const sales = salesMatch ? Number(salesMatch[1].replace(/,/g, '')) : 0;
+  const volume = volumeMatch ? decodeHtmlEntities_(volumeMatch[1]).replace(/\s+/g, ' ').trim() : null;
 
   return {
     price: Number.isFinite(price) ? price : null,
@@ -572,14 +413,27 @@ function extractPriceChartingPSA10_(html) {
   };
 }
 
+function ensureV020Schema_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
+  if (!sheet) return;
+
+  if (String(sheet.getRange(1, 7).getValue() || '').trim() === 'Raw CM €') {
+    sheet.deleteColumn(7);
+  }
+
+  const headers = [
+    'Set ID', 'Card #', 'Variant', 'Qty', 'Name', 'Rarity',
+    'Raw $', 'PSA 10 $', 'PSA10 Sales', 'PSA10/Raw',
+    'PSA Watch', 'PSA Updated', 'Grade Candidates', 'Updated',
+    'TCGplayer ID', 'PriceCharting'
+  ];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+}
 
 // PriceCharting links
 
 function ensurePriceChartingColumn_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET);
-  if (!sheet) return;
-  const headerCell = sheet.getRange(1, 17);
-  if (String(headerCell.getValue() || '').trim() !== 'PriceCharting') headerCell.setValue('PriceCharting');
+  ensureV020Schema_();
 }
 
 function updatePriceChartingLinks() {
@@ -593,7 +447,7 @@ function updatePriceChartingLinks() {
   let matched = 0, skipped = 0, missing = 0, errors = 0;
 
   for (let row = 2; row <= lastRow; row++) {
-    const linkCell = sheet.getRange(row, 17);
+    const linkCell = sheet.getRange(row, 16);
     const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
 
     if (existingLink) {
@@ -601,7 +455,7 @@ function updatePriceChartingLinks() {
       continue;
     }
 
-    const productId = String(sheet.getRange(row, 16).getValue() || '').trim();
+    const productId = String(sheet.getRange(row, 15).getValue() || '').trim();
     const name = String(sheet.getRange(row, 5).getValue() || '').trim();
     const cardNumber = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
 
@@ -640,14 +494,14 @@ function updatePriceChartingLinkForRow_(row, cardData) {
   if (!sheet) throw new Error('Collection sheet was not found.');
   ensurePriceChartingColumn_();
 
-  const linkCell = sheet.getRange(row, 17);
+  const linkCell = sheet.getRange(row, 16);
   const existingLink = linkCell.getRichTextValue()?.getLinkUrl();
   if (existingLink) return existingLink;
 
   cardData = cardData || {};
 
   const productId = String(
-    cardData.productId || sheet.getRange(row, 16).getDisplayValue() || ''
+    cardData.productId || sheet.getRange(row, 15).getDisplayValue() || ''
   ).trim();
 
   const name = String(
