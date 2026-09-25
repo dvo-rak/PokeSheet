@@ -24,15 +24,31 @@ TCGdex base URL: https://api.tcgdex.net/v2/en
 
 TCGdex is the card catalog. It provides card search, details, sets, images, variants, and TCGplayer product IDs. Collector numbers are resolved defensively so leading zeroes such as 034 survive Google Sheets coercion.
 
-PriceCharting is the pricing source. Verified product pages provide the TCGplayer comparison raw price, PSA 10 price, sold-listing count, and sales volume. PokeSheet discovers candidate pages from PriceCharting search results and accepts a page only when its TCGplayer Product ID exactly matches column P. Existing links are cached. New-card entry flushes spreadsheet writes, re-reads the effective Product ID from column P, and then attempts PriceCharting matching.
+PriceCharting is the pricing source. Verified product pages provide the TCGplayer comparison raw price, PSA 10 price, sold-listing count, and sales volume. PokeSheet discovers candidate pages from PriceCharting search results and accepts a page only when its TCGplayer Product ID exactly matches column N. Existing links are cached. New-card entry flushes spreadsheet writes and then attempts PriceCharting matching using the effective Product ID.
 
-PSA updates read the verified PriceCharting URL from column Q and parse PSA 10 price, sold-listing count, and volume from the product page. The parser fails closed and must not erase a previous PSA value when expected markup is missing.
+Pricing updates read the verified PriceCharting URL from column O and parse raw + PSA pricing from the same product page. The parser fails closed and must not erase previous values when expected markup is missing.
 
 ## Spreadsheet contract
 
 The sheet name must be Collection.
 
-Columns are positional and are part of the application contract:\n\nA Set ID\nB Card #\nC Variant\nD Qty\nE Name\nF Rarity\nG Raw $\nH PSA 10 $\nI PSA10 Sales\nJ PSA10/Raw\nK Refresh\nL PSA Updated\nM Grade Candidates\nN Updated\nO TCGplayer ID\nP PriceCharting
+Columns are positional and are part of the application contract:
+
+A Set ID
+B Card #
+C Variant
+D Qty
+E Name
+F Rarity
+G Raw $
+H PSA 10 $
+I PSA10 Sales
+J PSA10/Raw
+K Refresh
+L Grade Candidates
+M Updated
+N TCGplayer ID
+O PriceCharting
 
 Do not reorder columns without migrating every positional read/write.
 
@@ -53,7 +69,7 @@ Raw $ is the TCGplayer comparison price parsed from the verified PriceCharting p
 
 PriceCharting matching uses the TCGplayer Product ID in column N. Pricing refreshes use the verified PriceCharting URL in column O. Missing PSA 10 data or unrecognized markup is a valid no-update state, not a reason to erase previous values.
 
-## PSA refresh rules
+## Refresh rules
 
 OFF: never.
 HIGH: every 3 days.
@@ -66,7 +82,7 @@ AUTO:
 - $100–249: 7 days
 - $250 and above: 3 days
 
-A card with no previous PSA update must always be eligible for its first lookup. A cheap raw card can still have a valuable PSA 10 market.
+A card with no previous pricing update must always be eligible for its first lookup. A row with missing Raw $ or PSA 10 $ bypasses the cache and is eligible for refresh unless Refresh is OFF. A cheap raw card can still have a valuable PSA 10 market.
 
 The updater currently caps a run at 40 lookups.
 
@@ -107,7 +123,7 @@ Do not commit credentials or personal collection data. PokeSheet currently requi
 - Spreadsheet columns are hard-coded by index.
 - Price updates process rows sequentially.
 - The TCGdex set list is loaded when the sidebar opens rather than cached.
-- PSA refresh priority follows sheet order.
+- Pricing refresh priority follows sheet order.
 - Distribution currently uses independent copies of a Google Sheets template.
 - Updating this repository does not automatically update existing spreadsheet copies.
 - PriceCharting link discovery depends on public website HTML and can require maintenance if PriceCharting changes its markup or search behavior.
@@ -121,7 +137,7 @@ Possible improvements, not automatic requirements:
 1. First-time setup/repair for headers, dropdowns, and formatting.
 2. Version display and Check for updates.
 3. Grading radar using PSA price, PSA/raw multiple, sales count, and confidence.
-4. Better PSA refresh prioritization.
+4. Better pricing refresh prioritization.
 5. Cache the TCGdex set list.
 6. Better distribution if the user base grows: clasp, Apps Script library, or Workspace add-on.
 7. Optional phone/OCR card capture.
