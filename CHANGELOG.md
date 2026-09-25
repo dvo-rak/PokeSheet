@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 - 2026-09-25
+
+### Changed
+- PriceCharting is now the single pricing source.
+- Raw $ is parsed from the TCGplayer comparison row on the verified PriceCharting product page.
+- PSA 10 price, sold-listing count, and sales volume are parsed from the same page fetch.
+- TCGdex is now used as the card catalog and TCGplayer Product ID source.
+- Removed the Cardmarket EUR column.
+- Existing sheets migrate automatically by removing the old Raw CM € column and shifting the remaining schema.
+- Replaced separate raw/PSA menu actions with Update prices.
+- New cards attempt verified PriceCharting matching and pricing immediately.
+
 ## 0.1.4 - 2026-09-25
 
 ### Changed
@@ -27,7 +39,6 @@
 ### Added
 
 - Custom / unlisted printing entry using a manual TCGplayer Product ID.
-- Raw TCGplayer market pricing for custom printings through Pokémon Price Tracker during PSA updates.
 
 ### Fixed
 
@@ -47,11 +58,10 @@
 - Card image preview and variant selection.
 - Duplicate detection using Set ID + Card # + Variant.
 - Automatic quantity increments for duplicates.
-- Cardmarket and TCGplayer raw pricing.
+- Initial raw pricing support.
 - Automatic TCGplayer product ID storage.
-- PSA 10 pricing and sales count through Pokémon Price Tracker.
 - PSA 10 / raw multiplier.
 - PSA refresh cache with AUTO, HIGH, LOW, and OFF modes.
-- API lookup cap for PSA refresh runs.
+- Lookup cap for pricing refresh runs.
 - English source comments and repository documentation.
 - CLAUDE.md development context.
