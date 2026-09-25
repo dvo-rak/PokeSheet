@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 - 2026-09-25
+
+### Changed
+- PSA 10 pricing now comes from the verified PriceCharting product page stored in column Q instead of Pokémon Price Tracker graded data.
+- PSA 10 sold-listing count and sales volume are parsed from the same PriceCharting page.
+- PSA refresh remains controlled by AUTO, HIGH, LOW, and OFF modes.
+- PSA parsing fails closed: an unrecognized PriceCharting page does not erase previously stored PSA values.
+
 ## 0.1.3 - 2026-09-25
 
 ### Fixed
