@@ -44,7 +44,7 @@ PSA Watch values: AUTO, HIGH, LOW, OFF.
 
 ## Google Sheets template
 
-**[Make a copy of the master tracker](https://docs.google.com/spreadsheets/d/1MzzMkVgVU4I-rDNRcX0lfRb3zWMuW_FvVD9bwZ8miZk/copy)**
+**[Make a copy of the master tracker](https://docs.google.com/spreadsheets/d/1MzzMkVgVU4I-rDNRcX0lfRb3zWMuW_FvVD9bwZ8miZk/edit?usp=sharing)**
 
 The master spreadsheet is intended to stay clean and contain no personal collection data or API keys. Make your own copy before using the tracker.
 
