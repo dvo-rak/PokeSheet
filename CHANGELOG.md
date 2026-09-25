@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3 - 2026-09-25
+
+### Fixed
+- Automatic PriceCharting lookup after adding a new card now flushes raw-price/Product-ID writes and explicitly re-reads the effective TCGplayer Product ID before matching.
+
 ## 0.1.2 - 2026-09-25
 
 ### Added
