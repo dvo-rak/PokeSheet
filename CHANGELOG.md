@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.1] - 2026-09-25
+
+### Added
+
+- Custom / unlisted printing entry using a manual TCGplayer Product ID.
+- Raw TCGplayer market pricing for custom printings through Pokémon Price Tracker during PSA updates.
+
+### Fixed
+
+- Collector numbers with leading zeroes are preserved and resolved correctly, including values such as 034.
+- Raw price refreshes no longer overwrite custom TCGplayer Product IDs or custom raw TCG prices.
+- Custom duplicate detection includes the TCGplayer Product ID so separate printings can coexist.
+
+
 ## [0.1.0] - 2026-09-25
 
 ### Added
