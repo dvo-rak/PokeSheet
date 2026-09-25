@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-09-25
+
+### Changed
+- Removed the redundant PSA Updated column; Raw and PSA pricing now share one Updated timestamp.
+- Update prices again respects the existing PSA Watch cache rules while refreshing Raw + PSA together from one PriceCharting fetch.
+- Existing 0.2.0 sheets migrate automatically and preserve the previous PSA Updated timestamp as the unified Updated value.
+
+
 ## 0.2.0 - 2026-09-25
 
 ### Changed
