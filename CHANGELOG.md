@@ -11,6 +11,8 @@
 - Existing sheets migrate automatically by removing the old Raw CM € column and shifting the remaining schema.
 - Replaced separate raw/PSA menu actions with Update prices.
 - New cards attempt verified PriceCharting matching and pricing immediately.
+- PSA10/Raw is displayed with two decimal places.
+- Added a Collection Summary outside the data table with Raw Total calculated as Qty × Raw $.
 
 ## 0.1.4 - 2026-09-25
 
