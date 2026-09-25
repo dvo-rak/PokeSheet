@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f7f7f7; color: #202124; }
+    h2 { margin: 0 0 14px; font-size: 20px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+    .tab { flex: 1; padding: 9px 6px; border: 1px solid #dadce0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    .tab.active { background: #202124; color: white; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    label { display: block; font-size: 12px; font-weight: 700; margin: 12px 0 5px; }
+    input, select { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #dadce0; border-radius: 7px; background: white; }
+    button.primary { width: 100%; margin-top: 12px; padding: 10px; border: 0; border-radius: 8px; background: #202124; color: white; font-weight: 700; cursor: pointer; }
+    button.primary:disabled { opacity: .5; cursor: default; }
+    .status { margin-top: 12px; font-size: 12px; line-height: 1.4; }
+    .error { color: #b3261e; }
+    .success { color: #137333; font-weight: 600; }
+    .results { margin-top: 14px; }
+    .card { display: flex; gap: 10px; padding: 10px; margin-bottom: 8px; border: 1px solid #dadce0; border-radius: 9px; background: white; cursor: pointer; }
+    .card:hover { border-color: #5f6368; }
+    .card.selected { border: 2px solid #202124; }
+    .card img { width: 62px; height: 86px; object-fit: contain; border-radius: 4px; }
+    .card-name { font-weight: 700; margin-bottom: 4px; }
+    .small { font-size: 11px; color: #5f6368; line-height: 1.45; }
+    .selected-box { display: none; margin-top: 14px; padding: 12px; background: white; border: 1px solid #dadce0; border-radius: 9px; }
+    .selected-preview { display: flex; gap: 12px; margin-bottom: 8px; }
+    .selected-preview img { width: 80px; max-height: 112px; object-fit: contain; }
+    .loader { display: none; margin-top: 12px; font-size: 12px; color: #5f6368; }
+  </style>
+</head>
+<body>
+  <h2>⚡ Pokémon Collection</h2>
+
+  <div class="tabs">
+    <button id="randomTab" class="tab active" onclick="switchMode('random')">Random bulk</button>
+    <button id="setTab" class="tab" onclick="switchMode('set')">Same set</button>
+  </div>
+
+  <div id="randomPanel" class="panel active">
+    <label>Card name</label>
+    <input id="searchName" type="text" placeholder="Furret">
+    <label>Collector #</label>
+    <input id="searchNumber" type="text" placeholder="136/189">
+    <button class="primary" onclick="searchCards()">🔎 Search</button>
+    <div id="searchLoader" class="loader">Searching TCGdex...</div>
+    <div id="searchStatus" class="status"></div>
+    <div id="results" class="results"></div>
+  </div>
+
+  <div id="setPanel" class="panel">
+    <label>Set</label>
+    <select id="setSelect"><option value="">Loading sets...</option></select>
+    <label>Card #</label>
+    <input id="setCardNumber" type="text" placeholder="136">
+    <button class="primary" onclick="findInSet()">🔎 Find card</button>
+    <div id="setLoader" class="loader">Loading card...</div>
+    <div id="setStatus" class="status"></div>
+  </div>
+
+  <div id="selectedBox" class="selected-box">
+    <div class="selected-preview">
+      <img id="selectedImage" alt="">
+      <div>
+        <div id="selectedName" class="card-name"></div>
+        <div id="selectedInfo" class="small"></div>
+      </div>
+    </div>
+    <label>Variant</label>
+    <select id="variantSelect"></select>
+    <label>Qty</label>
+    <input id="qty" type="number" min="1" step="1" value="1">
+    <button id="addButton" class="primary" onclick="addSelectedCard()">➕ Add card</button>
+    <div id="addStatus" class="status"></div>
+  </div>
+
+<script>
+  let selectedCard = null;
+
+  function switchMode(mode) {
+    document.getElementById('randomPanel').classList.toggle('active', mode === 'random');
+    document.getElementById('setPanel').classList.toggle('active', mode === 'set');
+    document.getElementById('randomTab').classList.toggle('active', mode === 'random');
+    document.getElementById('setTab').classList.toggle('active', mode === 'set');
+    clearSelectedCard();
+  }
+
+  function searchCards() {
+    const name = document.getElementById('searchName').value.trim();
+    const number = document.getElementById('searchNumber').value.trim();
+    const status = document.getElementById('searchStatus');
+    const results = document.getElementById('results');
+
+    status.textContent = '';
+    status.className = 'status';
+    results.innerHTML = '';
+    clearSelectedCard();
+
+    if (!name) {
+      status.textContent = 'Enter a card name.';
+      status.className = 'status error';
+      return;
+    }
+
+    document.getElementById('searchLoader').style.display = 'block';
+
+    google.script.run
+      .withSuccessHandler(function(cards) {
+        document.getElementById('searchLoader').style.display = 'none';
+        renderResults(cards);
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('searchLoader').style.display = 'none';
+        status.textContent = error.message || String(error);
+        status.className = 'status error';
+      })
+      .searchCardsForSidebar(name, number);
+  }
+
+  function renderResults(cards) {
+    const results = document.getElementById('results');
+    const status = document.getElementById('searchStatus');
+    results.innerHTML = '';
+
+    if (!cards || cards.length === 0) {
+      status.textContent = 'No cards found. Try the name without a number or check the collector number.';
+      status.className = 'status error';
+      return;
+    }
+
+    status.textContent = 'Found: ' + cards.length;
+    status.className = 'status';
+
+    cards.forEach(function(card) {
+      const div = document.createElement('div');
+      div.className = 'card';
+
+      div.onclick = function() {
+        document.querySelectorAll('.card').forEach(function(element) {
+          element.classList.remove('selected');
+        });
+        div.classList.add('selected');
+        selectCard(card);
+      };
+
+      const image = card.image ? card.image + '/low.webp' : '';
+      div.innerHTML =
+        (image ? '<img src="' + escapeHtml(image) + '">' : '') +
+        '<div><div class="card-name">' + escapeHtml(card.name) + '</div>' +
+        '<div class="small">' + escapeHtml(card.setName) + '<br>#' +
+        escapeHtml(card.localId) +
+        (card.rarity ? '<br>' + escapeHtml(card.rarity) : '') +
+        '</div></div>';
+
+      results.appendChild(div);
+    });
+  }
+
+  function loadSets() {
+    google.script.run
+      .withSuccessHandler(function(sets) {
+        const select = document.getElementById('setSelect');
+        select.innerHTML = '<option value="">Select set...</option>';
+
+        sets.forEach(function(set) {
+          const option = document.createElement('option');
+          option.value = set.id;
+          option.textContent = set.name + ' (' + set.id + ')';
+          select.appendChild(option);
+        });
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('setSelect').innerHTML =
+          '<option value="">Failed to load sets</option>';
+        console.error(error);
+      })
+      .getSetsForSidebar();
+  }
+
+  function findInSet() {
+    const setId = document.getElementById('setSelect').value;
+    const number = document.getElementById('setCardNumber').value.trim();
+    const status = document.getElementById('setStatus');
+
+    status.textContent = '';
+    status.className = 'status';
+    clearSelectedCard();
+
+    if (!setId) {
+      status.textContent = 'Select a set.';
+      status.className = 'status error';
+      return;
+    }
+
+    if (!number) {
+      status.textContent = 'Enter a card number.';
+      status.className = 'status error';
+      return;
+    }
+
+    document.getElementById('setLoader').style.display = 'block';
+
+    google.script.run
+      .withSuccessHandler(function(card) {
+        document.getElementById('setLoader').style.display = 'none';
+        selectCard(card);
+      })
+      .withFailureHandler(function(error) {
+        document.getElementById('setLoader').style.display = 'none';
+        status.textContent = error.message || String(error);
+        status.className = 'status error';
+      })
+      .findCardInSetForSidebar(setId, number);
+  }
+
+  function selectCard(card) {
+    selectedCard = card;
+    document.getElementById('selectedBox').style.display = 'block';
+    document.getElementById('selectedName').textContent = card.name;
+    document.getElementById('selectedInfo').innerHTML =
+      escapeHtml(card.setName) + '<br>#' + escapeHtml(card.localId) +
+      (card.rarity ? '<br>' + escapeHtml(card.rarity) : '');
+
+    const image = document.getElementById('selectedImage');
+    if (card.image) {
+      image.src = card.image + '/high.webp';
+      image.style.display = 'block';
+    } else {
+      image.style.display = 'none';
+    }
+
+    const variantSelect = document.getElementById('variantSelect');
+    variantSelect.innerHTML = '';
+
+    // Let the user choose manually if the API has no variant metadata.
+    const variants = card.variants && card.variants.length
+      ? card.variants
+      : ['Normal', 'Holo', 'Reverse'];
+
+    variants.forEach(function(variant) {
+      const option = document.createElement('option');
+      option.value = variant;
+      option.textContent = variant;
+      variantSelect.appendChild(option);
+    });
+
+    document.getElementById('qty').value = 1;
+    document.getElementById('addStatus').textContent = '';
+    document.getElementById('addStatus').className = 'status';
+  }
+
+  function clearSelectedCard() {
+    selectedCard = null;
+    document.getElementById('selectedBox').style.display = 'none';
+  }
+
+  function addSelectedCard() {
+    if (!selectedCard) return;
+
+    const variant = document.getElementById('variantSelect').value;
+    const qty = Number(document.getElementById('qty').value);
+    const status = document.getElementById('addStatus');
+    const button = document.getElementById('addButton');
+
+    if (!Number.isInteger(qty) || qty < 1) {
+      status.textContent = 'Quantity must be a whole number greater than 0.';
+      status.className = 'status error';
+      return;
+    }
+
+    button.disabled = true;
+    status.textContent = 'Adding card...';
+    status.className = 'status';
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        button.disabled = false;
+
+        if (result.status === 'updated') {
+          status.textContent =
+            '✅ ' + result.name + ': Qty ' + result.oldQty + ' → ' + result.newQty;
+        } else {
+          let message = '✅ ' + result.name + ' added';
+          if (result.rawTCG !== '') message += ' | TCG $' + result.rawTCG;
+          if (result.rawCM !== '') message += ' | CM €' + result.rawCM;
+          status.textContent = message;
+        }
+
+        status.className = 'status success';
+        document.getElementById('qty').value = 1;
+      })
+      .withFailureHandler(function(error) {
+        button.disabled = false;
+        status.textContent = error.message || String(error);
+        status.className = 'status error';
+      })
+      .addCardFromSidebar({
+        setId: selectedCard.setId,
+        cardNumber: selectedCard.localId,
+        name: selectedCard.name,
+        rarity: selectedCard.rarity,
+        variant: variant,
+        qty: qty
+      });
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  loadSets();
+</script>
+</body>
+</html>
