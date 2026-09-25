@@ -97,7 +97,7 @@ Raw prices come from TCGdex:
 
 PSA data comes from Pokémon Price Tracker and is intentionally updated separately so that adding bulk cards does not consume graded-price API credits.
 
-PriceCharting is used as a human-review fallback for graded market data. PokeSheet searches for a candidate product, verifies the product page's TCGplayer ID against column P, and only then writes a clickable `↗ PriceCharting` link to column Q. Existing verified links are cached and are not fetched again during normal updates. Use **⚡ Pokémon → Update PriceCharting links** to backfill missing links.
+PriceCharting is used as a human-review fallback for graded market data. PokeSheet searches for a candidate product, verifies the product page's TCGplayer ID against column P, and only then writes a clickable `↗ PriceCharting` link to column Q. Newly added cards automatically attempt the PriceCharting lookup after their TCGplayer Product ID is written. Existing verified links are cached and are not fetched again during normal updates. Use **⚡ Pokémon → Update PriceCharting links** to backfill or retry missing links.
 
 **API usage:** PSA / graded pricing uses Pokémon Price Tracker API credits and is subject to the provider's rate limits. PokeSheet limits PSA updates to **40 cards per run** to reduce quota usage. Standard raw pricing from TCGdex does not consume Pokémon Price Tracker API credits. Custom / unlisted printings reuse the Pokémon Price Tracker PSA response to populate their Raw TCG market price without an additional request.
 
@@ -118,7 +118,7 @@ Cards that have never been checked are eligible for their initial PSA lookup reg
 
 ## Version
 
-Current source version: 0.1.2
+Current source version: 0.1.3
 
 See CHANGELOG.md for release notes and CLAUDE.md for architecture and maintenance context.
 
