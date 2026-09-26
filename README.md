@@ -22,6 +22,8 @@ A lightweight Pokémon TCG collection and price tracker built with Google Sheets
 
 PriceCharting data is parsed from product-page HTML, so markup changes may require maintenance.
 
+PriceCharting data remains subject to PriceCharting's terms. PokeSheet does not redistribute a PriceCharting dataset.
+
 ## Sheet contract
 
 | Column | Header |
